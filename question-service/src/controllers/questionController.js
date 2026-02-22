@@ -87,11 +87,11 @@ const createQuestion = async (req, res) => {
 
 // ────────────────────────────────────────────────────────────
 // GET /questions  (Public)
-// Retrieve by topic + difficulty
+// Retrieve by topics + difficulty
 // Both filters are optional; if neither is provided all questions are returned.
 // ────────────────────────────────────────────────────────────
 const getQuestions = async (req, res) => {
-  const { topic, difficulty } = req.query;
+  const { topics, difficulty } = req.query;
 
   const conditions = [];
   const params = [];
@@ -108,10 +108,10 @@ const getQuestions = async (req, res) => {
     conditions.push(`difficulty = $${params.length}`);
   }
 
-  if (topic) {
-    // Case-insensitive topic match: checks if topic string is in the topics array
-    params.push(topic);
-    conditions.push(`$${params.length} ILIKE ANY(topics)`);
+  if (topics) {
+    const topicList = req.query.topics.split(',').map(t => t.trim());
+    params.push(topicList);
+    conditions.push(`topics && $${params.length}::text[]`);
   }
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
