@@ -16,6 +16,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    networks:
+      - peerprep-network
 
   question-service:
     build: .
@@ -34,6 +36,12 @@ services:
       postgres:
         condition: service_healthy
     restart: unless-stopped
+    networks:
+      - peerprep-network
 
 volumes:
   postgres_data:
+
+networks:
+  peerprep-network:
+    name: peerprep-network
