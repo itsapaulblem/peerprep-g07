@@ -13,6 +13,8 @@ export function startMatchSubscriber() {
   });
 
   sub.on('message', (channel, message) => {
-    handleMatchEvent(channel, message);
+    handleMatchEvent(channel, message).catch((error) => {
+      console.error('[Subscriber] Failed to handle match event:', error);
+    });
   });
 }

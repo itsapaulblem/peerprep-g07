@@ -1,11 +1,69 @@
-import { redis } from '../redis/redisClient';
-import { userStateStore, wsConnectionStore } from '../store/matchingStore';
-import { Topic, Difficulty, Language } from '../types';
-import { toQueueKey } from '../utils';
 import { WebSocket } from 'ws';
+import { redis } from '../redis/redisClient';
+import { wsConnectionStore } from '../store/matchingStore';
+import { Difficulty, Language, Topic } from '../types';
+import { toQueueKey } from '../utils';
 
 // const TIMEOUT_MS = 2 * 60 * 1000; // 2 mins for production
 const TIMEOUT_MS = 10 * 1000; // 10 seconds for testing
+const QUEUED_USERS_KEY = 'queued.users';
+
+const LUA_ENQUEUE_IF_ABSENT = `
+  if redis.call('HEXISTS', KEYS[1], ARGV[1]) == 1 then
+    return 0
+  end
+
+  redis.call('RPUSH', KEYS[2], ARGV[1])
+  redis.call('HSET', KEYS[1], ARGV[1], ARGV[2])
+  return 1
+`;
+
+const LUA_CLEANUP_TIMEOUT_IF_QUEUED = `
+  local currentState = redis.call('HGET', KEYS[1], ARGV[1])
+  if not currentState then
+    return 0
+  end
+
+  -- Snapshot mismatch means the state changed after HGETALL and should be ignored.
+  if currentState ~= ARGV[2] then
+    return 0
+  end
+
+  local removed = redis.call('LREM', KEYS[2], 0, ARGV[1])
+  if removed > 0 then
+    redis.call('HDEL', KEYS[1], ARGV[1])
+    return 1
+  end
+
+  -- User was no longer in queue (likely already dequeued for match); clear stale hash only.
+  redis.call('HDEL', KEYS[1], ARGV[1])
+  return -1
+`;
+
+const LUA_CANCEL_IF_QUEUED = `
+  local currentState = redis.call('HGET', KEYS[1], ARGV[1])
+  if not currentState then
+    return 0
+  end
+
+  if currentState ~= ARGV[2] then
+    return 0
+  end
+
+  local removed = redis.call('LREM', KEYS[2], 0, ARGV[1])
+  if removed > 0 then
+    redis.call('HDEL', KEYS[1], ARGV[1])
+    return 1
+  end
+
+  redis.call('HDEL', KEYS[1], ARGV[1])
+  return -1
+`;
+
+type QueuedUserState = {
+  enqueuedAt: number;
+  queueKey: string;
+};
 
 function pushToWs(ws: WebSocket, message: Object) {
   if (ws && ws.readyState === ws.OPEN) {
@@ -13,56 +71,121 @@ function pushToWs(ws: WebSocket, message: Object) {
   }
 }
 
-function removeUser(userId: string) {
-  userStateStore.delete(userId);
+function parseQueuedUserState(rawState: string): QueuedUserState | null {
+  try {
+    const parsed = JSON.parse(rawState) as Partial<QueuedUserState>;
+    if (typeof parsed.queueKey !== 'string' || typeof parsed.enqueuedAt !== 'number') {
+      return null;
+    }
+
+    return parsed as QueuedUserState;
+  } catch {
+    return null;
+  }
+}
+
+async function removeUser(userId: string) {
+  await redis.hdel(QUEUED_USERS_KEY, userId);
+  removeWsConnection(userId);
+}
+
+function removeWsConnection(userId: string) {
   const ws = wsConnectionStore.get(userId);
   wsConnectionStore.delete(userId);
   ws?.close();
 }
 
 export async function handleEnqueue(userId: string, topic: Topic, difficulty: Difficulty, language: Language, ws: WebSocket) {
-  // TODO: Store user state in Redis hash to allow multiple matching service instances to work
-  if (userStateStore.has(userId)) {
-    pushToWs(ws, { type: 'error', message: 'User is already in a queue or a match.' });
+  const queueKey = toQueueKey({ topic, difficulty, language });
+  const queuedState = JSON.stringify({ enqueuedAt: Date.now(), queueKey });
+
+  const enqueueResult = (await redis.eval(
+    LUA_ENQUEUE_IF_ABSENT,
+    2,
+    QUEUED_USERS_KEY,
+    queueKey,
+    userId,
+    queuedState,
+  )) as number;
+
+  if (enqueueResult === 0) {
+    pushToWs(ws, { type: 'error', message: 'User is already in a queue.' });
     return;
   }
-
-  const queueKey = toQueueKey({ topic, difficulty, language });
-  await redis.rpush(`${queueKey}`, userId);
-  userStateStore.set(userId, { enqueuedAt: Date.now(), queueKey });
 
   pushToWs(ws, { type: 'queued', queueKey });
   console.log(`User ${userId} enqueued into ${queueKey}`);
 }
 
 export async function handleCancel(userId: string) {
-  const state = userStateStore.get(userId);
-  if (!state) return;
+  const rawState = await redis.hget(QUEUED_USERS_KEY, userId);
+  if (!rawState) return;
+
+  const state = parseQueuedUserState(rawState);
+  if (!state) {
+    await redis.hdel(QUEUED_USERS_KEY, userId);
+    console.error(`Invalid queued state for user ${userId}; removed stale state`);
+    return;
+  }
 
   const { queueKey } = state;
-  await redis.lrem(`${queueKey}`, 0, userId);
+  const cancelResult = (await redis.eval(
+    LUA_CANCEL_IF_QUEUED,
+    2,
+    QUEUED_USERS_KEY,
+    queueKey,
+    userId,
+    rawState,
+  )) as number;
 
-  const ws = wsConnectionStore.get(userId);
-  pushToWs(ws, { type: 'cancelled' });
-  removeUser(userId);
-  console.log(`User ${userId} cancelled and removed from ${queueKey}`);
+  if (cancelResult === 1) {
+    const ws = wsConnectionStore.get(userId);
+    pushToWs(ws, { type: 'cancelled' });
+    removeWsConnection(userId);
+    console.log(`User ${userId} cancelled and removed from ${queueKey}`);
+    return;
+  }
+
+  if (cancelResult === -1) {
+    console.log(`Skipped cancel for user ${userId}; user was already removed from queue ${queueKey}`);
+  }
 }
 
 export async function cleanupTimedOutUsers() {
   const now = Date.now();
 
-  for (const [userId, state] of userStateStore.entries()) {
+  const queuedUsers = await redis.hgetall(QUEUED_USERS_KEY);
+  for (const [userId, rawState] of Object.entries(queuedUsers)) {
+    const state = parseQueuedUserState(rawState);
+    if (!state) {
+      await redis.hdel(QUEUED_USERS_KEY, userId);
+      console.error(`Invalid queued state for user ${userId}; removed stale state`);
+      continue;
+    }
+
     if (now - state.enqueuedAt >= TIMEOUT_MS) {
-      await redis.lrem(`${state.queueKey}`, 0, userId);
-      const ws = wsConnectionStore.get(userId);
-      pushToWs(ws, { type: 'timeout' });
-      removeUser(userId);
-      console.log(`User ${userId} timed out and removed from ${state.queueKey}`);
+      const timeoutCleanupResult = (await redis.eval(
+        LUA_CLEANUP_TIMEOUT_IF_QUEUED,
+        2,
+        QUEUED_USERS_KEY,
+        state.queueKey,
+        userId,
+        rawState,
+      )) as number;
+
+      if (timeoutCleanupResult === 1) {
+        const ws = wsConnectionStore.get(userId);
+        pushToWs(ws, { type: 'timeout' });
+        removeWsConnection(userId);
+        console.log(`User ${userId} timed out and removed from ${state.queueKey}`);
+      } else if (timeoutCleanupResult === -1) {
+        console.log(`Skipped timeout for user ${userId}; user was already removed from queue ${state.queueKey}`);
+      }
     }
   }
 }
 
-export function handleMatchEvent(channel: string, rawMessage: string) {
+export async function handleMatchEvent(channel: string, rawMessage: string) {
   let event;
   try {
     event = JSON.parse(rawMessage);
@@ -74,7 +197,7 @@ export function handleMatchEvent(channel: string, rawMessage: string) {
   for (const userId of event.users) {
     const ws = wsConnectionStore.get(userId);
     pushToWs(ws, { type: 'matched', match: event });
-    removeUser(userId);
+    await removeUser(userId);
   }
 
   console.log(`Match delivered: ${event.users[0]} and ${event.users[1]} into room ${event.roomId}`);
