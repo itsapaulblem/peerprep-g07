@@ -206,7 +206,6 @@ export function AdminPanel() {
                     )}
                   </div>
                 )}
-                {/* Delete Account button removed for root admin UI */}
 
                 {user.access_role === "root-admin" && (
                   <Badge variant="outline" className="border-red-300 text-red-600 text-xs">
