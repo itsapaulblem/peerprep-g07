@@ -10,6 +10,18 @@ function createApiServer(redisClient) {
 
         try {
             const room = await redisClient.hGetAll(`room:${roomId}`);
+            const rawChatLog = await redisClient.lRange(`room:${roomId}:chat`, 0, -1);
+
+            const chatLog = rawChatLog
+                .map((entry) => {
+                    try {
+                        return JSON.parse(entry);
+                    } catch (err) {
+                        console.error('Invalid chat log entry in redis:', err);
+                        return null;
+                    }
+                })
+                .filter(Boolean);
 
             if (!room || !room.question || !room.programmingLanguage) {
                 return res.status(404).json({ error: 'Room not found' });
@@ -17,7 +29,8 @@ function createApiServer(redisClient) {
 
             return res.json({
                 question: room.question,
-                programmingLanguage: room.programmingLanguage
+                programmingLanguage: room.programmingLanguage,
+                chatLog
             });
         } catch (err) {
             console.error('Failed to fetch room from redis:', err);

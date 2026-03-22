@@ -17,7 +17,8 @@ async function startServer() {
     });
 
     createYjsServer({
-        port: YJS_WS_PORT
+        port: YJS_WS_PORT,
+        redisClient
     });
 
     const app = createApiServer(redisClient);

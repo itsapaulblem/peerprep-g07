@@ -7,14 +7,23 @@ import Editor from "@monaco-editor/react"
 import { useNavigate } from 'react-router-dom'
 import Chatbox from "./Chatbox";
 
+type ChatMessage = {
+    id: string
+    user: string
+    message: string
+    timestamp: number
+}
+
 export default function CodingSpace() {
     const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:3000"
     const wsBaseUrl = import.meta.env.VITE_YJS_WS_URL || "ws://localhost:8081/yjs"
+    const chatWsBaseUrl = import.meta.env.VITE_CHAT_WS_URL || "ws://localhost:8081/chat"
 
     // Need to fetch question and programming language from backend instead of using props
     const [roomData, setRoomData] = useState<{
         question: string,
-        programmingLanguage: string
+        programmingLanguage: string,
+        chatLog: ChatMessage[]
     } | null>(null)
     const [isLoading, setIsLoading] = useState(true)
     const [loadError, setLoadError] = useState<string | null>(null)
@@ -129,7 +138,11 @@ export default function CodingSpace() {
                             </div>
 
                             <div>
-                                <Chatbox />
+                                <Chatbox
+                                    roomId={roomId}
+                                    wsBaseUrl={chatWsBaseUrl}
+                                    initialMessages={roomData.chatLog || []}
+                                />
                             </div>
                         </div>
                     </div>
