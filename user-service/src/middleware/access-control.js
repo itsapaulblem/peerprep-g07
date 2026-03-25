@@ -22,7 +22,13 @@ export async function verifyAccessToken(req, res, next) {
     if (!user) {
       return res.status(401).json({ error: 'Authorization failed' });
     }
-    req.user = { email: user.email, role: user.access_role };
+    req.user = {
+      id: user.id,
+      email: user.email,
+      username: user.username,
+      role: user.access_role,
+    };
+    
     next();
   } catch (error) {
     console.error('Error verifying access token:', error);

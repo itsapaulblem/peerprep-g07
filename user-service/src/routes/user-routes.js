@@ -3,10 +3,11 @@ import {
   createUser,
   getUserBySelf,
   updateUser,
+  deleteUser,
   getUserByEmail,
   updateUserRoleByEmail,
   getAllUsers,
-} from '../controllers/user-controller.js';
+} from "../controllers/user-controller.js";
 import {
   verifyAccessToken,
   verifyIsRootAdmin,
@@ -14,14 +15,19 @@ import {
 
 const router = express.Router();
 
+// Public routes
 router.post('/', createUser);
 
+// Authenticated routes
 router.get('/me', verifyAccessToken, getUserBySelf);
 
 router.patch('/me', verifyAccessToken, updateUser);
 
+router.delete("/me", verifyAccessToken, deleteUser);
+
 router.get('/by-email/:email', verifyAccessToken, getUserByEmail);
 
+// Admin-only routes
 router.get('/all', verifyAccessToken, verifyIsRootAdmin, getAllUsers);
 
 router.patch(

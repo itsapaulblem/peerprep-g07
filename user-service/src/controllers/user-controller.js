@@ -3,9 +3,10 @@ import {
   getUserByEmail as _getUserByEmail,
   getUserById as _getUserById,
   updateUser as _updateUser,
+  deleteUserByEmail as _deleteUserByEmail,
   updateUserRoleByEmail as _updateUserRoleByEmail,
   getAllUsers as _getAllUsers,
-} from '../database/query.js';
+} from "../database/query.js";
 import bcrypt from 'bcrypt';
 import { mapUserToView } from '../utils/view.js';
 
@@ -99,17 +100,41 @@ export async function getUserById(req, res) {
 export async function updateUser(req, res) {
   try {
     const { email } = req.user;
-    const { username } = req.body;
+    const { username, preferred_language, topics_of_interest } = req.body;
 
     if (!username) {
       return res.status(400).json({ error: 'Username is required' });
     }
 
-    const result = await _updateUser(email, username);
+    const result = await _updateUser(
+      email,
+      username,
+      preferred_language,
+      topics_of_interest,
+    );
     return res.status(200).json(mapUserToView(result));
   } catch (error) {
     console.error('Error updating user:', error);
     return res.status(500).json({ error: 'Failed to update user' });
+  }
+}
+
+export async function deleteUser(req, res) {
+  try {
+    const { email, role } = req.user;
+    if (role == "root-admin") {
+      return res
+        .status(403)
+        .json({ error: "Forbidden: cannot delete root-admin user" });
+    }
+
+    const result = await _deleteUserByEmail(email);
+    if (!result) {
+      return res.status(404).json({ error: "User not found" });
+    }
+  } catch (error) {
+    console.error("Error deleting user:", error);
+    return res.status(500).json({ error: "Failed to delete user" });
   }
 }
 
