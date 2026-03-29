@@ -32,8 +32,26 @@ services:
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+      - LEETCODE_API_URL=${LEETCODE_API_URL}
+      - LEETCODE_SYNC_CRON=${LEETCODE_SYNC_CRON}
+      - LEETCODE_FETCH_LIMIT=${LEETCODE_FETCH_LIMIT}
+      - LEETCODE_REQUEST_DELAY_MS=${LEETCODE_REQUEST_DELAY_MS}
+      - LEETCODE_MAX_RETRIES=${LEETCODE_MAX_RETRIES}
+      - LEETCODE_RETRY_DELAY_MS=${LEETCODE_RETRY_DELAY_MS}
+      - LEETCODE_RUN_ON_START=${LEETCODE_RUN_ON_START}
+      - LEETCODE_BATCH_SIZE=${LEETCODE_BATCH_SIZE}
+      - LEETCODE_RATE_LIMIT_DELAY_MS=${LEETCODE_RATE_LIMIT_DELAY_MS}
+
     ports:
       - "${QUESTION_SERVICE_PORT}:${QUESTION_SERVICE_PORT}"
+    depends_on:
+      leetcode-api:
+        condition: service_started
+    restart: unless-stopped
+
+  leetcode-api:
+    image: alfaarghya/alfa-leetcode-api:2.0.3
+    container_name: leetcode-api
     restart: unless-stopped
 
   matching-service:
@@ -115,6 +133,8 @@ services:
     container_name: frontend
     ports:
       - "80:${FRONTEND_PORT}"
+    depends_on:
+      - api-gateway
     restart: unless-stopped
 
 volumes:
