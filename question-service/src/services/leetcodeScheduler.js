@@ -52,6 +52,7 @@ const TAG_MAP = {
 class ProgressTracker {
   constructor() {
     this.inserted = 0;
+    this.updated = 0;
     this.skipped = 0;
     this.failed = 0;
     this.retried = 0;
@@ -60,7 +61,7 @@ class ProgressTracker {
 
   log(status, title, extra = '') {
     const elapsed = ((Date.now() - this.startTime) / 1000).toFixed(1);
-    const icons = { inserted: '✅', skipped: '⏭ ', failed: '❌', retry: '🔄', warn: '⚠️ ' };
+    const icons = { inserted: '✅', updated: '🔧', skipped: '⏭ ', failed: '❌', retry: '🔄', warn: '⚠️ ' };
     console.log(`[${elapsed}s] ${icons[status] || '  '} ${title} ${extra}`);
   }
 
@@ -69,6 +70,7 @@ class ProgressTracker {
     console.log('\n────────────────────────────────────────');
     console.log(`📊 Sync complete in ${elapsed}s`);
     console.log(`   ✅ Inserted  : ${this.inserted}`);
+    console.log(`   🔧 Updated   : ${this.updated}`);
     console.log(`   ⏭  Skipped   : ${this.skipped} (duplicates)`);
     console.log(`   🔄 Retried   : ${this.retried}`);
     console.log(`   ❌ Failed    : ${this.failed}`);
@@ -87,15 +89,248 @@ const mapTopics = (tags = []) => {
   return [...new Set(mapped)].length > 0 ? [...new Set(mapped)] : ['Algorithms'];
 };
 
-const stripHtml = (html = '') =>
-  html
-    .replace(/<[^>]*>/g, ' ')
+const decodeHtmlEntities = (text = '') =>
+  text
+    .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCodePoint(parseInt(code, 16)))
+    .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(parseInt(code, 10)))
     .replace(/&nbsp;/g, ' ')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&amp;/g, '&')
-    .replace(/\s+/g, ' ')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+
+const normalizeText = (text = '') =>
+  text
+    .replace(/\r/g, '')
+    .replace(/\u00a0/g, ' ')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
     .trim();
+
+const htmlToPlainText = (html = '') =>
+  normalizeText(
+    decodeHtmlEntities(
+      html
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/(p|div|section|article|h[1-6]|ul|ol|li|pre|blockquote)>/gi, '\n')
+        .replace(/<li[^>]*>/gi, '- ')
+        .replace(/<[^>]*>/g, '')
+    )
+  );
+
+const findLabelIndex = (text, label, startIndex = 0) => {
+  const matcher = new RegExp(`${label}:`, 'i');
+  const match = matcher.exec(text.slice(startIndex));
+  return match ? startIndex + match.index : -1;
+};
+
+const extractLabelValue = (text, label, nextLabels = []) => {
+  const start = findLabelIndex(text, label);
+  if (start === -1) return null;
+
+  const valueStart = start + label.length + 1;
+  const nextIndexes = nextLabels
+    .map((nextLabel) => findLabelIndex(text, nextLabel, valueStart))
+    .filter((index) => index !== -1);
+
+  const end = nextIndexes.length > 0 ? Math.min(...nextIndexes) : text.length;
+  return normalizeText(text.slice(valueStart, end));
+};
+
+const splitProblemSections = (plainText = '') => {
+  const lines = plainText.split('\n').map((line) => line.trim());
+  const descriptionLines = [];
+  const constraintLines = [];
+  const exampleBlocks = [];
+  let currentSection = 'description';
+  let currentExample = [];
+
+  const flushExample = () => {
+    if (currentExample.length > 0) {
+      exampleBlocks.push(normalizeText(currentExample.join('\n')));
+      currentExample = [];
+    }
+  };
+
+  for (const line of lines) {
+    if (/^Example\s+\d+:?$/i.test(line)) {
+      flushExample();
+      currentSection = 'example';
+      currentExample.push(line);
+      continue;
+    }
+
+    if (/^Constraints:?$/i.test(line)) {
+      flushExample();
+      currentSection = 'constraints';
+      continue;
+    }
+
+    if (/^(Follow[- ]up|Note|Notes):?$/i.test(line)) {
+      flushExample();
+      currentSection = 'other';
+      continue;
+    }
+
+    if (!line) {
+      if (currentSection === 'example' && currentExample.length > 0) {
+        currentExample.push('');
+      } else if (currentSection === 'description' && descriptionLines.length > 0) {
+        descriptionLines.push('');
+      } else if (currentSection === 'constraints' && constraintLines.length > 0) {
+        constraintLines.push('');
+      }
+      continue;
+    }
+
+    if (currentSection === 'example') {
+      currentExample.push(line);
+      continue;
+    }
+
+    if (currentSection === 'constraints') {
+      constraintLines.push(line.replace(/^- /, ''));
+      continue;
+    }
+
+    if (currentSection === 'description') {
+      descriptionLines.push(line);
+    }
+  }
+
+  flushExample();
+
+  return {
+    description: normalizeText(descriptionLines.join('\n')),
+    constraints: normalizeText(constraintLines.join('\n')),
+    exampleBlocks,
+  };
+};
+
+const parseExampleBlock = (exampleBlock) => {
+  const normalizedBlock = normalizeText(exampleBlock.replace(/^Example\s+\d+:?\s*/i, ''));
+  const input = extractLabelValue(normalizedBlock, 'Input', ['Output', 'Explanation']);
+  const output = extractLabelValue(normalizedBlock, 'Output', ['Explanation']);
+  const explanation = extractLabelValue(normalizedBlock, 'Explanation');
+
+  if (!input && !output && !explanation) {
+    return null;
+  }
+
+  return {
+    input: input || 'Not provided by LeetCode.',
+    output: output || 'Not provided by LeetCode.',
+    ...(explanation ? { explanation } : {}),
+  };
+};
+
+const buildFallbackTestCases = (question = {}) => {
+  const candidates = [];
+
+  if (Array.isArray(question.exampleTestcaseList)) {
+    candidates.push(...question.exampleTestcaseList);
+  }
+
+  if (typeof question.exampleTestcases === 'string') {
+    candidates.push(...question.exampleTestcases.split('\n'));
+  }
+
+  if (typeof question.sampleTestCase === 'string') {
+    candidates.push(question.sampleTestCase);
+  }
+
+  const uniqueCases = [...new Set(candidates.map((item) => item.trim()).filter(Boolean))];
+  return uniqueCases.map((input) => ({
+    input,
+    output: 'Output not provided by LeetCode API.',
+  }));
+};
+
+const normalizeDetailPayload = (detail, problem = {}) => {
+  const detailObject = detail && typeof detail === 'object' ? detail : {};
+  const nestedQuestion =
+    detailObject.question && typeof detailObject.question === 'object'
+      ? detailObject.question
+      : {};
+
+  return {
+    title:
+      detailObject.questionTitle ||
+      nestedQuestion.title ||
+      detailObject.title ||
+      problem.title,
+    difficulty:
+      detailObject.difficulty ||
+      nestedQuestion.difficulty ||
+      problem.difficulty,
+    topicTags:
+      detailObject.topicTags ||
+      nestedQuestion.topicTags ||
+      problem.topicTags ||
+      [],
+    htmlContent:
+      (typeof detailObject.question === 'string' && detailObject.question) ||
+      nestedQuestion.content ||
+      nestedQuestion.translatedContent ||
+      detailObject.content ||
+      detailObject.translatedContent ||
+      '',
+    exampleTestcases:
+      detailObject.exampleTestcases ||
+      nestedQuestion.exampleTestcases ||
+      '',
+    exampleTestcaseList:
+      detailObject.exampleTestcaseList ||
+      nestedQuestion.exampleTestcaseList ||
+      [],
+    sampleTestCase:
+      detailObject.sampleTestCase ||
+      nestedQuestion.sampleTestCase ||
+      '',
+    link:
+      detailObject.link ||
+      nestedQuestion.link ||
+      null,
+  };
+};
+
+const buildQuestionPayload = ({ detail, problem, slug }) => {
+  const question = normalizeDetailPayload(detail, problem);
+  const plainText = htmlToPlainText(question.htmlContent);
+  const sections = splitProblemSections(plainText);
+  const parsedExamples = sections.exampleBlocks.map(parseExampleBlock).filter(Boolean);
+  const fallbackExamples = buildFallbackTestCases(question);
+  const testCases =
+    parsedExamples.length > 0
+      ? parsedExamples
+      : fallbackExamples.length > 0
+        ? fallbackExamples
+        : [{ input: 'Not provided by LeetCode API.', output: 'Not provided by LeetCode API.' }];
+
+  return {
+    title: question.title || problem.title,
+    description: sections.description || plainText || `LeetCode problem: ${question.title || problem.title}`,
+    constraints: sections.constraints || null,
+    testCases,
+    leetcodeLink: question.link || `https://leetcode.com/problems/${slug}/`,
+    difficulty: mapDifficulty(question.difficulty || problem.difficulty),
+    topics: mapTopics(question.topicTags || problem.topicTags || []),
+  };
+};
+
+const hasPlaceholderDetails = (row) => {
+  const descriptionMissing = !row.description || /see leetcode/i.test(row.description);
+  const constraintsMissing = !row.constraints || !row.constraints.trim();
+  const testCasesMissing =
+    !Array.isArray(row.test_cases) ||
+    row.test_cases.length === 0 ||
+    row.test_cases.every((testCase) =>
+      /see leetcode|not provided by leetcode/i.test(`${testCase?.input || ''} ${testCase?.output || ''}`)
+    );
+
+  return descriptionMissing || constraintsMissing || testCasesMissing;
+};
 
 // ── Persistent skip state ─────────────────────────────────────
 // Stores the current LeetCode pagination offset in the DB
@@ -125,16 +360,16 @@ const saveSkip = async (skip) => {
 };
 
 // ── Duplicate detection ───────────────────────────────────────
-const questionExists = async (title) => {
+const getExistingQuestion = async (title) => {
   try {
     const result = await pool.query(
-      'SELECT 1 FROM questions WHERE title = $1 LIMIT 1',
+      'SELECT * FROM questions WHERE title = $1 LIMIT 1',
       [title]
     );
-    return result.rows.length > 0;
+    return result.rows[0] || null;
   } catch (err) {
     console.error('[scheduler] Duplicate check failed:', err.message);
-    return false;
+    return null;
   }
 };
 
@@ -219,8 +454,36 @@ const insertQuestion = async (payload) => {
   return result.rows[0];
 };
 
+const updateQuestionDetails = async (questionId, payload) => {
+  const result = await pool.query(
+    `UPDATE questions
+        SET title = $1,
+            description = $2,
+            constraints = $3,
+            test_cases = $4,
+            leetcode_link = $5,
+            difficulty = $6,
+            topics = $7
+      WHERE question_id = $8
+      RETURNING question_id, title`,
+    [
+      payload.title,
+      payload.description,
+      payload.constraints || null,
+      JSON.stringify(payload.testCases),
+      payload.leetcodeLink,
+      payload.difficulty,
+      payload.topics,
+      questionId,
+    ]
+  );
+
+  return result.rows[0];
+};
+
 // ── Main sync job ─────────────────────────────────────────────
 let isRunning = false;
+let pendingRunRequested = false;
 
 const runSync = async () => {
   if (isRunning) {
@@ -265,8 +528,8 @@ const runSync = async () => {
         const title = problem.title;
 
         // Duplicate check
-        const exists = await questionExists(title);
-        if (exists) {
+        const existingQuestion = await getExistingQuestion(title);
+        if (existingQuestion && !hasPlaceholderDetails(existingQuestion)) {
           tracker.skipped++;
           tracker.log('skipped', title, '(already in DB)');
           totalProcessed++;
@@ -284,21 +547,18 @@ const runSync = async () => {
         }
 
         // Build and insert
-        const q = detail.question || detail;
-        const payload = {
-          title: q.title || title,
-          description: q.content ? stripHtml(q.content) : 'See LeetCode for full description.',
-          constraints: null,
-          testCases: [{ input: 'See LeetCode link for test cases', output: 'See LeetCode link for test cases' }],
-          leetcodeLink: `https://leetcode.com/problems/${slug}/`,
-          difficulty: mapDifficulty(q.difficulty || problem.difficulty),
-          topics: mapTopics(q.topicTags || []),
-        };
+        const payload = buildQuestionPayload({ detail, problem, slug });
 
         try {
-          const inserted = await insertQuestion(payload);
-          tracker.inserted++;
-          tracker.log('inserted', payload.title, `(ID: ${inserted.question_id})`);
+          if (existingQuestion) {
+            const updated = await updateQuestionDetails(existingQuestion.question_id, payload);
+            tracker.updated++;
+            tracker.log('updated', payload.title, `(ID: ${updated.question_id})`);
+          } else {
+            const inserted = await insertQuestion(payload);
+            tracker.inserted++;
+            tracker.log('inserted', payload.title, `(ID: ${inserted.question_id})`);
+          }
         } catch (err) {
           tracker.failed++;
           tracker.log('failed', payload.title, `(DB error: ${err.message})`);
@@ -314,8 +574,34 @@ const runSync = async () => {
     }
   } finally {
     tracker.summary(skip);
+    const shouldRunQueuedSync = pendingRunRequested && !isShuttingDown;
+    pendingRunRequested = false;
     isRunning = false;
+
+    if (shouldRunQueuedSync) {
+      console.log('[scheduler] Starting one queued sync after the active run completed.');
+      setTimeout(() => {
+        triggerSync('queued follow-up');
+      }, 0);
+    }
   }
+};
+
+const triggerSync = (source = 'scheduler') => {
+  if (isShuttingDown) {
+    console.log(`[scheduler] Ignoring ${source} sync request because shutdown is in progress.`);
+    return;
+  }
+
+  if (isRunning) {
+    if (!pendingRunRequested) {
+      pendingRunRequested = true;
+      console.log(`[scheduler] Sync requested by ${source} while another run is active. Queued one follow-up run.`);
+    }
+    return;
+  }
+
+  runSync().catch((err) => console.error(`[scheduler] Unexpected error during ${source} sync:`, err));
 };
 
 // ── Graceful shutdown ─────────────────────────────────────────
@@ -340,13 +626,13 @@ const startScheduler = () => {
   console.log(`[scheduler] LeetCode sync scheduled: "${CONFIG.cronSchedule}"`);
 
   scheduledTask = cron.schedule(CONFIG.cronSchedule, () => {
-    runSync().catch((err) => console.error('[scheduler] Unexpected error during sync:', err));
+    triggerSync('cron');
   });
 
   if (CONFIG.runOnStart) {
     console.log('[scheduler] LEETCODE_RUN_ON_START=true — running initial sync in 5s...');
     setTimeout(() => {
-      runSync().catch((err) => console.error('[scheduler] Unexpected error during initial sync:', err));
+      triggerSync('startup');
     }, 5000);
   }
 };
