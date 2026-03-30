@@ -310,6 +310,59 @@ GET /questions?topics=Algorithms&difficulty=Medium
 
 ---
 
+### Get Random Question by Topic and Difficulty
+
+| Method | Path | Auth |
+|--------|------|------|
+| GET | `/questions/random` | None |
+
+**Query Parameters** - both required
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `topic` | string | Exact topic to match, e.g. `Arrays` |
+| `difficulty` | string | `Easy`, `Medium`, or `Hard` |
+
+**Examples**
+```
+GET /questions/random?topic=Arrays&difficulty=Medium
+GET /questions/random?topic=Algorithms&difficulty=Hard
+```
+
+**Response 200**
+```json
+{
+  "question": {
+    "questionId": 12,
+    "title": "Rotate Image",
+    "description": "You are given an n x n 2D matrix...",
+    "constraints": "n == matrix.length == matrix[i].length",
+    "testCases": [
+      {
+        "input": "matrix = [[1,2,3],[4,5,6],[7,8,9]]",
+        "output": "[[7,4,1],[8,5,2],[9,6,3]]"
+      }
+    ],
+    "leetcodeLink": "https://leetcode.com/problems/rotate-image/",
+    "difficulty": "Medium",
+    "topics": ["Arrays", "Algorithms"],
+    "imageUrls": [],
+    "createdAt": "2024-01-01T00:00:00.000Z",
+    "updatedAt": "2024-01-01T00:00:00.000Z"
+  }
+}
+```
+
+**Response 404**
+```json
+{
+  "error": "Not Found",
+  "message": "No question found for topic \"Graphs\" with difficulty \"Easy\"."
+}
+```
+
+---
+
 ### Get Question by ID
 
 | Method | Path | Auth |
@@ -473,6 +526,9 @@ curl "http://localhost:3001/questions?topics=Strings,Algorithms"
 
 # Filter by topic and difficulty
 curl "http://localhost:3001/questions?topics=Algorithms&difficulty=Medium"
+
+# Get one random question by topic and difficulty
+curl "http://localhost:3001/questions/random?topic=Arrays&difficulty=Medium"
 
 # Get question by ID
 curl http://localhost:3001/questions/1
