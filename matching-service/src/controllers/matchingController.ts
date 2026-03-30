@@ -14,6 +14,7 @@ import { toQueueKey } from '../utils';
 
 // const TIMEOUT_MS = 2 * 60 * 1000; // in ms for production
 const TIMEOUT_MS = 30 * 1000; // in ms for testing
+const PENDING_ACCEPT_TIMEOUT_MS = 15 * 1000;
 const QUESTION_SERVICE_URL = process.env.QUESTION_SERVICE_URL || 'http://localhost:3001';
 
 // KEYS[1] = queued users hash key
@@ -188,6 +189,32 @@ const LUA_FINALIZE_PENDING_MATCH = `
   return 1
 `;
 
+// KEYS[1] = pending matches hash key
+// KEYS[2] = user -> pending match hash key
+// ARGV[1] = pending match ID
+// ARGV[2] = snapshot of pending match state JSON string
+const LUA_EXPIRE_PENDING_MATCH_IF_UNCHANGED = `
+  local currentState = redis.call('HGET', KEYS[1], ARGV[1])
+  if not currentState then
+    return 0
+  end
+
+  if currentState ~= ARGV[2] then
+    return -1
+  end
+
+  local ok, state = pcall(cjson.decode, currentState)
+  if not ok then
+    redis.call('HDEL', KEYS[1], ARGV[1])
+    return 0
+  end
+
+  redis.call('HDEL', KEYS[1], ARGV[1])
+  redis.call('HDEL', KEYS[2], state.user1Id)
+  redis.call('HDEL', KEYS[2], state.user2Id)
+  return 1
+`;
+
 type QueuedUserState = {
   enqueuedAt: number;
   queueKey: string;
@@ -244,6 +271,65 @@ function parsePendingMatchState(rawState: string): PendingMatchState | null {
     return parsed as PendingMatchState;
   } catch {
     return null;
+  }
+}
+
+async function removeUserPendingMappingsByPendingMatchId(pendingMatchId: string) {
+  const userMappings = await redis.hgetall(USER_PENDING_MATCH_KEY);
+  const usersToClear = Object.entries(userMappings)
+    .filter(([, mappedPendingMatchId]) => mappedPendingMatchId === pendingMatchId)
+    .map(([userId]) => userId);
+
+  if (usersToClear.length > 0) {
+    await redis.hdel(USER_PENDING_MATCH_KEY, ...usersToClear);
+  }
+}
+
+async function cleanupTimedOutPendingMatches(now: number) {
+  const pendingMatches = await redis.hgetall(PENDING_MATCHES_KEY);
+
+  for (const [pendingMatchId, rawPendingState] of Object.entries(pendingMatches)) {
+    const pendingState = parsePendingMatchState(rawPendingState);
+    if (!pendingState) {
+      await redis.hdel(PENDING_MATCHES_KEY, pendingMatchId);
+      await removeUserPendingMappingsByPendingMatchId(pendingMatchId);
+      console.error(`Invalid pending match state for ${pendingMatchId}; removed stale state`);
+      continue;
+    }
+
+    if (now - pendingState.createdAt < PENDING_ACCEPT_TIMEOUT_MS) {
+      continue;
+    }
+
+    const expireResult = (await redis.eval(
+      LUA_EXPIRE_PENDING_MATCH_IF_UNCHANGED,
+      2,
+      PENDING_MATCHES_KEY,
+      USER_PENDING_MATCH_KEY,
+      pendingMatchId,
+      rawPendingState,
+    )) as number;
+
+    if (expireResult !== 1) {
+      continue;
+    }
+
+    for (const pendingUserId of [pendingState.user1Id, pendingState.user2Id]) {
+      const ws = wsConnectionStore.get(pendingUserId);
+      pushToWs(ws, { type: 'pending_accept_timeout' });
+      removeWsConnection(pendingUserId);
+    }
+
+    console.log(
+      `Pending match ${pendingMatchId} timed out and users ${pendingState.user1Id}, ${pendingState.user2Id} were disconnected`,
+    );
+  }
+}
+
+export async function reconcilePendingMatches() {
+  const deletedCount = await redis.del(PENDING_MATCHES_KEY, USER_PENDING_MATCH_KEY);
+  if (deletedCount > 0) {
+    console.log(`[Startup] Cleared stale pending match state keys (${deletedCount} keys removed)`);
   }
 }
 
@@ -385,6 +471,8 @@ export async function cleanupTimedOutUsers() {
       }
     }
   }
+
+  await cleanupTimedOutPendingMatches(now);
 }
 
 export async function handleAcceptMatch(userId: string, pendingMatchId: string) {

@@ -47,6 +47,7 @@ export type InboundMessage =
  | { type: "matched"; match: Match }
  | { type: "match_pending"; pendingMatch: PendingMatch }
  | { type: "match_confirmed"; match: Match }
+ | { type: "pending_accept_timeout" }
  | { type: "timeout" }
  | { type: "cancelled" }
  | { type: "error"; message: string };
