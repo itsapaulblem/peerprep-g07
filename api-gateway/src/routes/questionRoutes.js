@@ -52,7 +52,23 @@ router.get('/topics', async (req, res) => {
   }
 });
 
-// GET /api/questions/:id → question-service GET /questions/:id (public) 
+// GET /api/questions/random -> question-service GET /questions/random (public)
+// Fetches one random question based on topic + difficulty
+router.get('/random', async (req, res) => {
+  try {
+    const response = await axios.get(`${QUESTION_SERVICE_URL}/questions/random`, {
+      params: req.query,
+    });
+    return res.status(response.status).json(response.data);
+  } catch (error) {
+    if (error.response) {
+      return res.status(error.response.status).json(error.response.data);
+    }
+    return res.status(500).json({ error: 'Question service unavailable' });
+  }
+});
+
+// GET /api/questions/:id -> question-service GET /questions/:id (public)
 // Fetches a specific question by ID
 router.get('/:id', async (req, res) => {
   try {
@@ -67,7 +83,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // POST /api/questions → question-service POST /questions (admin only)
-// Creates a new question. 
+// Creates a new question.
 router.post('/', verifyToken, verifyAdmin, proxyQuestionWriteRequest);
 
 // PUT /api/questions/:id → question-service PUT /questions/:id (admin only) Updates a question by ID.
