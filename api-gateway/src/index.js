@@ -16,7 +16,6 @@ const app = express();
 const PORT = process.env.PORT || 3004;
 const MATCHING_SERVICE_URL = process.env.MATCHING_SERVICE_URL || 'http://localhost:3002';
 const COLLAB_WS_URL = process.env.COLLAB_WS_URL || 'ws://localhost:8081';
-const CODE_EXECUTION_SERVICE_URL = process.env.CODE_EXECUTION_SERVICE_URL || 'http://localhost:3005';
 
 app.use(cors());
 app.use(express.json());
