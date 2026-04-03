@@ -2,7 +2,7 @@ import { Button } from "@/app/components/ui/button";
 import { Input } from "@/app/components/ui/input";
 import { Label } from "@/app/components/ui/label";
 import { Badge } from "@/app/components/ui/badge";
-import { User, Mail, Award, Code, Save, Shield, Lock, Crown, Trash2, AlertTriangle } from "lucide-react";
+import { User, Mail, Lock, Save, Shield, Crown, Trash2, AlertTriangle } from "lucide-react";
 import { useState, useEffect } from "react";
 import { getProfile, updateProfile, changePassword, deleteAccount } from "@/app/services/authService";
 
@@ -107,6 +107,10 @@ export function UserProfileScreen() {
 
   if (isLoading) {
     return <div className="text-center py-12 text-gray-500">Loading profile...</div>;
+  }
+
+  if (error) {
+    return <div className="text-center py-12 text-red-500">{error}</div>;
   }
 
   return (
@@ -260,8 +264,8 @@ export function UserProfileScreen() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="username" className="text-gray-700">Username</Label>
-              <Input 
-                id="username" 
+              <Input
+                id="username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 className="border-2 border-gray-300"
@@ -272,8 +276,8 @@ export function UserProfileScreen() {
               <Label htmlFor="email" className="text-gray-700">Email</Label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <Input 
-                  id="email" 
+                <Input
+                  id="email"
                   type="email"
                   value={email}
                   disabled
@@ -303,8 +307,8 @@ export function UserProfileScreen() {
                   <Label htmlFor="current-password" className="text-gray-700">Current Password</Label>
                   <div className="relative">
                     <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <Input 
-                      id="current-password" 
+                    <Input
+                      id="current-password"
                       type="password"
                       value={currentPassword}
                       onChange={(e) => setCurrentPassword(e.target.value)}
@@ -317,8 +321,8 @@ export function UserProfileScreen() {
                   <Label htmlFor="new-password" className="text-gray-700">New Password</Label>
                   <div className="relative">
                     <Shield className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <Input 
-                      id="new-password" 
+                    <Input
+                      id="new-password"
                       type="password"
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
@@ -331,8 +335,8 @@ export function UserProfileScreen() {
                   <Label htmlFor="confirm-new-password" className="text-gray-700">Confirm New Password</Label>
                   <div className="relative">
                     <Shield className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <Input 
-                      id="confirm-new-password" 
+                    <Input
+                      id="confirm-new-password"
                       type="password"
                       value={confirmNewPassword}
                       onChange={(e) => setConfirmNewPassword(e.target.value)}
@@ -382,7 +386,7 @@ export function UserProfileScreen() {
           )}
 
           <div className="flex justify-end gap-2 pt-4">
-            <Button variant="outline" className="border-2 border-gray-300" onClick={handleCancel} disabled={isSaving}> 
+            <Button variant="outline" className="border-2 border-gray-300" onClick={handleCancel} disabled={isSaving}>
               Cancel
             </Button>
             <Button className="bg-blue-600 hover:bg-blue-700 text-white" onClick={handleSave} disabled={isSaving}>

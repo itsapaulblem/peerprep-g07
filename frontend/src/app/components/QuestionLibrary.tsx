@@ -119,7 +119,7 @@ export function QuestionLibrary({
     try {
       const data = await getTopics();
       setAvailableTopics(data.topics);
-    } catch (err: any) {
+    } catch (err: { response?: { data?: { error?: string } } }) {
       setError(err.response?.data?.error || "Failed to load topics");
     }
   };

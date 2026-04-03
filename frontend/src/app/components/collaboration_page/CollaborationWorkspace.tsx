@@ -248,8 +248,7 @@ export function CollaborationWorkspace() {
   };
 
   // Attach Yjs + Monaco collaborative binding when editor is mounted.
-  const handleEditorMount = (editor: any) => {
-    editorRef.current = editor;
+  const handleEditorMount = (editor: Editor) => {
     if (!roomId) {
       return;
     }
