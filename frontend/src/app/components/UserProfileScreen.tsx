@@ -4,13 +4,16 @@ import { Label } from "@/app/components/ui/label";
 import { Badge } from "@/app/components/ui/badge";
 import { User, Mail, Award, Code, Save, Shield, Lock, Crown, Trash2, AlertTriangle } from "lucide-react";
 import { useState, useEffect } from "react";
-import { getProfile, updateProfile } from "@/app/services/authService";
+import { getProfile, updateProfile, changePassword, deleteAccount } from "@/app/services/authService";
 
 export function UserProfileScreen() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("");
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
@@ -46,8 +49,11 @@ export function UserProfileScreen() {
   };
 
   const handleDeleteAccount = () => {
-    alert("Account deletion requested. In a real app, this would delete your account.");
+    deleteAccount();
     setShowDeleteConfirm(false);
+    // refresh page to trigger logout and redirect to login screen
+    window.location.reload();
+
   };
 
   if (isLoading) {
@@ -211,38 +217,6 @@ export function UserProfileScreen() {
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="language" className="text-gray-700">Preferred Language</Label>
-              <select 
-                id="language"
-                defaultValue="JavaScript"
-                className="w-full h-10 px-3 border-2 border-gray-300 rounded-md bg-white"
-              >
-                <option>JavaScript</option>
-                <option>Python</option>
-                <option>Java</option>
-                <option>C++</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Topics of Interest */}
-          <div className="space-y-2">
-            <Label className="text-gray-700 flex items-center gap-2">
-              <Code className="h-4 w-4" />
-              Topics of Interest
-            </Label>
-            <div className="border-2 border-gray-300 rounded-lg p-4 min-h-[100px]">
-              <div className="flex flex-wrap gap-2">
-                <Badge variant="secondary" className="border border-gray-300">Algorithms</Badge>
-                <Badge variant="secondary" className="border border-gray-300">Data Structures</Badge>
-                <Badge variant="secondary" className="border border-gray-300">Dynamic Programming</Badge>
-                <Badge variant="secondary" className="border border-gray-300">System Design</Badge>
-                <Button variant="outline" size="sm" className="border-2 border-dashed border-gray-400">
-                  + Add Topic
-                </Button>
-              </div>
-            </div>
           </div>
 
           {/* Stats */}

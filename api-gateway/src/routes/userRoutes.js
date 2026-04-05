@@ -74,4 +74,20 @@ router.patch('/:email/role', verifyToken, async (req, res) => {
   }
 });
 
+// DELETE /api/users/me → user-service DELETE /users/me 
+// Deletes current user's account
+router.delete('/me', verifyToken, async (req, res) => {
+  try {
+    const response = await axios.delete(`${USER_SERVICE_URL}/users/me`, {
+      headers: { Authorization: `Bearer ${req.token}` },
+    });
+    return res.status(response.status).json(response.data);
+  } catch (error) {
+    if (error.response) {
+      return res.status(error.response.status).json(error.response.data);
+    }
+    return res.status(500).json({ error: 'User service unavailable' });
+  }
+});
+
 export default router;

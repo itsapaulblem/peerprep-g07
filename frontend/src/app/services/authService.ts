@@ -72,6 +72,17 @@ export async function updateProfile(username: string) {
   return response.data;
 }
 
+export async function changePassword(currentPassword: string, newPassword: string) {
+  const response = await apiClient.post('/users/me/password', { current_password: currentPassword, new_password: newPassword });
+  return response.data;
+}
+
+export async function deleteAccount() {
+  const response = await apiClient.delete('/users/me');
+  logout();
+  return response.data;
+}
+
 export async function getAllUsers(): Promise<UserProfile[]> {
   const response = await apiClient.get('/users/all');
   return response.data;
