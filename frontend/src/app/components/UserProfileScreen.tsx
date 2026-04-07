@@ -7,6 +7,7 @@ import { useMemo, useState, useEffect } from "react";
 import { getProfile, updateProfile, changePassword, deleteAccount } from "@/app/services/authService";
 import { getMyAttemptHistory, type AttemptHistoryEntry } from "@/app/services/attemptHistoryService";
 import { AttemptHistoryPanel } from "@/app/components/AttemptHistoryPanel";
+import { extractApiErrorMessage } from "../utils/apiError";
 
 const formatTimestamp = (timestamp: string) => {
   try {
@@ -47,8 +48,8 @@ export function UserProfileScreen() {
         setRole(profile.access_role || "user");
         setAttempts(attemptHistory.attempts);
         setProfileImageUrl(profile.profile_image_url || "");
-      } catch (err: any) {
-        setError("Failed to load profile");
+      } catch (err: unknown) {
+        setError(extractApiErrorMessage(err, "Failed to load profile"));
       } finally {
         setIsLoading(false);
         setAttemptsLoading(false);
@@ -64,8 +65,8 @@ export function UserProfileScreen() {
     try {
       await updateProfile({ username, profile_image: selectedImage || undefined });
       setSaveMessage("Profile updated successfully!");
-    } catch (err: any) {
-      setSaveMessage(err.response?.data?.error || "Failed to update profile");
+    } catch (err: unknown) {
+      setSaveMessage(extractApiErrorMessage(err, "Failed to update profile"));
     } finally {
       setIsSaving(false);
     }
@@ -99,8 +100,8 @@ export function UserProfileScreen() {
       setCurrentPassword("");
       setNewPassword("");
       setConfirmNewPassword("");
-    } catch (err: any) {
-      setPasswordMessage(err.response?.data?.error || "Failed to change password");
+    } catch (err: unknown) {
+      setPasswordMessage(extractApiErrorMessage(err, "Failed to change password"));
     } finally {
       setIsSaving(false);
     }
@@ -118,8 +119,8 @@ export function UserProfileScreen() {
       };
       fetchProfile();
       setSaveMessage("Changes reverted successfully!");
-    } catch (err: any) {
-      setSaveMessage("Failed to revert changes");
+    } catch (err: unknown) {
+      setSaveMessage(extractApiErrorMessage(err, "Failed to revert changes"));
     }
   };
 
