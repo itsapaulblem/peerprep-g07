@@ -1,13 +1,12 @@
 const react = require('eslint-plugin-react');
 const globals = require('globals');
-const typescriptEslint = require('@typescript-eslint/eslint-plugin');
 const typescriptParser = require('@typescript-eslint/parser');
 module.exports = [
   {
     files: ['**/*.{js,jsx,mjs,cjs,ts,tsx}'],
     plugins: {
       react,
-      typescriptEslint,
+      '@typescript-eslint': require('@typescript-eslint/eslint-plugin'),
     },
     languageOptions: {
       parser: typescriptParser,
@@ -23,8 +22,8 @@ module.exports = [
     },
     rules: {
       'react/jsx-uses-vars': 'error',
-      'typescriptEslint/no-explicit-any': 'error',
-      'typescriptEslint/no-unused-vars': 'warn',
+      '@typescript-eslint/no-explicit-any': 'error',
+      '@typescript-eslint/no-unused-vars': 'warn',
     },
   },
 ];

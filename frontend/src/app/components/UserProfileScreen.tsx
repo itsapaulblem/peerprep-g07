@@ -5,6 +5,7 @@ import { Badge } from "@/app/components/ui/badge";
 import { User, Mail, Lock, Save, Shield, Crown, Trash2, AlertTriangle } from "lucide-react";
 import { useState, useEffect } from "react";
 import { getProfile, updateProfile, changePassword, deleteAccount } from "@/app/services/authService";
+import { extractApiErrorMessage } from "../utils/apiError";
 
 export function UserProfileScreen() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -31,8 +32,8 @@ export function UserProfileScreen() {
         setEmail(profile.email);
         setRole(profile.access_role || "user");
         setProfileImageUrl(profile.profile_image_url || "");
-      } catch (err: any) {
-        setError("Failed to load profile");
+      } catch (err: unknown) {
+        setError(extractApiErrorMessage(err, "Failed to load profile"));
       } finally {
         setIsLoading(false);
       }
@@ -46,8 +47,8 @@ export function UserProfileScreen() {
     try {
       await updateProfile({ username, profile_image: selectedImage || undefined });
       setSaveMessage("Profile updated successfully!");
-    } catch (err: any) {
-      setSaveMessage(err.response?.data?.error || "Failed to update profile");
+    } catch (err: unknown) {
+      setSaveMessage(extractApiErrorMessage(err, "Failed to update profile"));
     } finally {
       setIsSaving(false);
     }
@@ -81,8 +82,8 @@ export function UserProfileScreen() {
       setCurrentPassword("");
       setNewPassword("");
       setConfirmNewPassword("");
-    } catch (err: any) {
-      setPasswordMessage(err.response?.data?.error || "Failed to change password");
+    } catch (err: unknown) {
+      setPasswordMessage(extractApiErrorMessage(err, "Failed to change password"));
     } finally {
       setIsSaving(false);
     }
@@ -100,8 +101,8 @@ export function UserProfileScreen() {
       };
       fetchProfile();
       setSaveMessage("Changes reverted successfully!");
-    } catch (err: any) {
-      setSaveMessage("Failed to revert changes");
+    } catch (err: unknown) {
+      setSaveMessage(extractApiErrorMessage(err, "Failed to revert changes"));
     }
   };
 
