@@ -14,6 +14,7 @@ export default function UIEditor({ roomId, programmingLanguage }: EditorProps) {
     const wsBaseUrl = import.meta.env.VITE_YJS_WS_URL || `${wsScheme}://${window.location.host}/ws/yjs`;
 
     // Attach Yjs + Monaco collaborative binding when editor is mounted.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const handleEditorMount = (editor: any) => {
         if (!roomId) {
             return;
@@ -38,6 +39,7 @@ export default function UIEditor({ roomId, programmingLanguage }: EditorProps) {
             language={programmingLanguage}
             defaultValue=""
             theme="vs-dark"
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             onMount={(editor: any) => handleEditorMount(editor)}
         />
     )

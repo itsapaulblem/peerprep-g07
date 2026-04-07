@@ -14,6 +14,7 @@ import {
 } from "@/app/services/attemptHistoryService";
 import { getQuestionById } from "@/app/services/questionService";
 import { AttemptHistoryPanel } from "@/app/components/AttemptHistoryPanel";
+import { toTitleCase } from "@/app/utils/titleCase";
 
 const languageMap: Record<string, string> = {
   javascript: "JavaScript",
@@ -75,14 +76,6 @@ type JwtPayload = {
   username?: string;
 };
 
-const toTitleCase = (value: string) => {
-  if (!value) {
-    return value;
-  }
-
-  return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
-};
-
 export function CollaborationWorkspace() {
   // Build API/WS base URLs from env with sensible local defaults.
   const baseApiUrl = import.meta.env.VITE_API_URL || "/api";
@@ -106,6 +99,7 @@ export function CollaborationWorkspace() {
   const [testCaseResults, setTestCaseResults] = useState<TestCaseResult[]>([]);
   const [activeTab, setActiveTab] = useState<"console" | "testcases">("console");
   const [showOutput, setShowOutput] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const editorRef = useRef<any>(null);
 
   // Pull roomId from URL query string (?roomId=...).
@@ -132,7 +126,7 @@ export function CollaborationWorkspace() {
   }, []);
 
   // Set username from JWT, then generated fallback.
-  const username = useMemo(() => {  
+  const username = useMemo(() => {
     if (tokenPayload?.username && tokenPayload.username.trim()) {
       return tokenPayload.username;
     }
@@ -197,10 +191,10 @@ export function CollaborationWorkspace() {
     }
 
     if (roomData.questionTopics && roomData.questionTopics.length > 0) {
-      return roomData.questionTopics;
+      return roomData.questionTopics.map(toTitleCase);
     }
 
-    return roomData.questionTopic ? [roomData.questionTopic] : [];
+    return roomData.questionTopic ? [toTitleCase(roomData.questionTopic)] : [];
   }, [roomData]);
 
   const peerName = useMemo(() => {
@@ -606,19 +600,19 @@ export function CollaborationWorkspace() {
             {roomData.imageUrls && roomData.imageUrls.length > 0 && (
               <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
                 <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-                {roomData.imageUrls.map((imageUrl, index) => (
-                  <div key={index} className="rounded-lg border border-gray-300 bg-white p-2">
-                    <img
-                      src={imageUrl}
-                      alt={`Question image ${index + 1}`}
-                      className="mx-auto h-auto max-h-40 w-auto max-w-full rounded-md object-contain"
-                      onError={(e) => {
-                        console.error('Failed to load image:', imageUrl);
-                        (e.target as HTMLImageElement).style.display = 'none';
-                      }}
-                    />
-                  </div>
-                ))}
+                  {roomData.imageUrls.map((imageUrl, index) => (
+                    <div key={index} className="rounded-lg border border-gray-300 bg-white p-2">
+                      <img
+                        src={imageUrl}
+                        alt={`Question image ${index + 1}`}
+                        className="mx-auto h-auto max-h-40 w-auto max-w-full rounded-md object-contain"
+                        onError={(e) => {
+                          console.error('Failed to load image:', imageUrl);
+                          (e.target as HTMLImageElement).style.display = 'none';
+                        }}
+                      />
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
@@ -707,10 +701,10 @@ export function CollaborationWorkspace() {
           </div>
 
           <div className="border-2 border-gray-300 rounded-lg overflow-hidden bg-gray-50">
-            <UIEditor 
-                roomId={roomId || ""} 
-                programmingLanguage={roomData.programmingLanguage} 
-              />
+            <UIEditor
+              roomId={roomId || ""}
+              programmingLanguage={roomData.programmingLanguage}
+            />
           </div>
 
           {/* Output Panel */}

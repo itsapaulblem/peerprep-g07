@@ -2,22 +2,12 @@ import { Button } from "@/app/components/ui/button";
 import { Input } from "@/app/components/ui/input";
 import { Label } from "@/app/components/ui/label";
 import { Badge } from "@/app/components/ui/badge";
-import {
-  User,
-  Mail,
-  Award,
-  Code,
-  Save,
-  Shield,
-  Lock,
-  Crown,
-  Trash2,
-  AlertTriangle,
-} from "lucide-react";
+import { User, Mail, Lock, Save, Shield, Crown, Trash2, AlertTriangle } from "lucide-react";
 import { useMemo, useState, useEffect } from "react";
 import { getProfile, updateProfile, changePassword, deleteAccount } from "@/app/services/authService";
 import { getMyAttemptHistory, type AttemptHistoryEntry } from "@/app/services/attemptHistoryService";
 import { AttemptHistoryPanel } from "@/app/components/AttemptHistoryPanel";
+import { extractApiErrorMessage } from "../utils/apiError";
 
 const formatTimestamp = (timestamp: string) => {
   try {
@@ -58,8 +48,8 @@ export function UserProfileScreen() {
         setRole(profile.access_role || "user");
         setAttempts(attemptHistory.attempts);
         setProfileImageUrl(profile.profile_image_url || "");
-      } catch (err: any) {
-        setError("Failed to load profile");
+      } catch (err: unknown) {
+        setError(extractApiErrorMessage(err, "Failed to load profile"));
       } finally {
         setIsLoading(false);
         setAttemptsLoading(false);
@@ -75,8 +65,8 @@ export function UserProfileScreen() {
     try {
       await updateProfile({ username, profile_image: selectedImage || undefined });
       setSaveMessage("Profile updated successfully!");
-    } catch (err: any) {
-      setSaveMessage(err.response?.data?.error || "Failed to update profile");
+    } catch (err: unknown) {
+      setSaveMessage(extractApiErrorMessage(err, "Failed to update profile"));
     } finally {
       setIsSaving(false);
     }
@@ -110,8 +100,8 @@ export function UserProfileScreen() {
       setCurrentPassword("");
       setNewPassword("");
       setConfirmNewPassword("");
-    } catch (err: any) {
-      setPasswordMessage(err.response?.data?.error || "Failed to change password");
+    } catch (err: unknown) {
+      setPasswordMessage(extractApiErrorMessage(err, "Failed to change password"));
     } finally {
       setIsSaving(false);
     }
@@ -129,8 +119,8 @@ export function UserProfileScreen() {
       };
       fetchProfile();
       setSaveMessage("Changes reverted successfully!");
-    } catch (err: any) {
-      setSaveMessage("Failed to revert changes");
+    } catch (err: unknown) {
+      setSaveMessage(extractApiErrorMessage(err, "Failed to revert changes"));
     }
   };
 
@@ -144,6 +134,10 @@ export function UserProfileScreen() {
 
   if (isLoading) {
     return <div className="text-center py-12 text-gray-500">Loading profile...</div>;
+  }
+
+  if (error) {
+    return <div className="text-center py-12 text-red-500">{error}</div>;
   }
 
   return (
@@ -369,8 +363,8 @@ export function UserProfileScreen() {
                   <Label htmlFor="current-password" className="text-gray-700">Current Password</Label>
                   <div className="relative">
                     <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <Input 
-                      id="current-password" 
+                    <Input
+                      id="current-password"
                       type="password"
                       value={currentPassword}
                       onChange={(e) => setCurrentPassword(e.target.value)}
@@ -383,8 +377,8 @@ export function UserProfileScreen() {
                   <Label htmlFor="new-password" className="text-gray-700">New Password</Label>
                   <div className="relative">
                     <Shield className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <Input 
-                      id="new-password" 
+                    <Input
+                      id="new-password"
                       type="password"
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
@@ -397,8 +391,8 @@ export function UserProfileScreen() {
                   <Label htmlFor="confirm-new-password" className="text-gray-700">Confirm New Password</Label>
                   <div className="relative">
                     <Shield className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <Input 
-                      id="confirm-new-password" 
+                    <Input
+                      id="confirm-new-password"
                       type="password"
                       value={confirmNewPassword}
                       onChange={(e) => setConfirmNewPassword(e.target.value)}
@@ -460,7 +454,7 @@ export function UserProfileScreen() {
           )}
 
           <div className="flex justify-end gap-2 pt-4">
-            <Button variant="outline" className="border-2 border-gray-300" onClick={handleCancel} disabled={isSaving}> 
+            <Button variant="outline" className="border-2 border-gray-300" onClick={handleCancel} disabled={isSaving}>
               Cancel
             </Button>
             <Button className="bg-blue-600 hover:bg-blue-700 text-white" onClick={handleSave} disabled={isSaving}>

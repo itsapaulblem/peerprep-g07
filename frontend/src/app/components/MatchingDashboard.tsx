@@ -25,6 +25,7 @@ import { Badge } from "../../app/components/ui/badge";
 import { Button } from "../../app/components/ui/button";
 import { Label } from "../../app/components/ui/label";
 import { getTopics } from "../services/questionService";
+import { extractApiErrorMessage } from "../utils/apiError";
 
 type MatchingState =
   | "idle"
@@ -55,8 +56,7 @@ interface PendingMatchInfo {
 interface MatchingDashboardProps {
   onMatchingStateChange?: (isSearching: boolean) => void;
 }
-
-const MATCH_ACCEPT_TIMEOUT_SECONDS = 15;
+  const MATCH_ACCEPT_TIMEOUT_SECONDS = 20;
 const TOPIC_MAP: Record<string, string> = {
   "Algorithms": "algorithms",
   "Data Structures": "data-structures",
@@ -76,7 +76,6 @@ const normalizeTopicForMatching = (topic: string) =>
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
-
 export function MatchingDashboard({ onMatchingStateChange }: MatchingDashboardProps) {
   const [selectedDifficulty, setSelectedDifficulty] = useState<string>("Medium");
   const [selectedTopic, setSelectedTopic] = useState<string>("");
@@ -336,14 +335,14 @@ export function MatchingDashboard({ onMatchingStateChange }: MatchingDashboardPr
         if (data.topics.length === 0) {
           setTopicsError("No topics are currently available.");
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (isCancelled) {
           return;
         }
 
         setAvailableTopics([]);
         setSelectedTopic("");
-        setTopicsError(err.response?.data?.error || "Failed to load topics");
+        setTopicsError(extractApiErrorMessage(err, "Failed to load topics"));
       } finally {
         if (!isCancelled) {
           setIsLoadingTopics(false);
@@ -394,7 +393,7 @@ export function MatchingDashboard({ onMatchingStateChange }: MatchingDashboardPr
     ? matchedUsers.find((userId) => userId !== currentUserId) ?? matchedUsers[0]
     : "";
   const matchedDifficulty = pendingMatchData?.difficulty;
-  const matchedTopic = pendingMatchData?.topic;
+  const matchedTopic = pendingMatchData?.topic.replace(/-/g, " ");
   const matchedLanguage = pendingMatchData?.language;
 
   // Cleanup WebSocket on unmount
