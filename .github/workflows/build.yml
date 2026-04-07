@@ -45,7 +45,7 @@ jobs:
 
       - name: Install collaboration-service dependencies
         run: npm install
-        working-directory: collaboration_service/backend
+        working-directory: collaboration-service/backend
 
       - name: Install frontend dependencies
         run: npm install
