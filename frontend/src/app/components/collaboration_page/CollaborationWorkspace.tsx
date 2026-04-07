@@ -56,6 +56,7 @@ type RoomData = {
   questionDifficulty: string;
   participantUserIds?: string[];
   testCases?: TestCase[];
+  imageUrls?: string[];
   chatLog: ChatMessage[];
 };
 
@@ -205,6 +206,18 @@ export function CollaborationWorkspace() {
     return peer?.name ?? "your peer";
   }, [participants]);
 
+  const descriptionParagraphs = useMemo(() => {
+    const description = roomData?.questionDescription?.trim() || "";
+    if (!description) {
+      return [];
+    }
+
+    return description
+      .split(/\n{2,}/)
+      .map((paragraph) => paragraph.trim())
+      .filter(Boolean);
+  }, [roomData?.questionDescription]);
+
   // Fetch room metadata and chat history from collaboration API whenever room changes.
   useEffect(() => {
     if (!roomId) {
@@ -243,6 +256,7 @@ export function CollaborationWorkspace() {
           questionDifficulty: toTitleCase(data.questionDifficulty),
           participantUserIds: data.participantUserIds,
           testCases: data.testCases || [],
+          imageUrls: data.imageUrls || [],
           chatLog: data.chatLog,
         });
       } catch (err) {
@@ -481,6 +495,19 @@ export function CollaborationWorkspace() {
     }, 60);
   };
 
+  const getDifficultyColor = (difficulty: string) => {
+    switch (difficulty) {
+      case "Easy":
+        return "bg-green-100 text-green-800 border-green-300";
+      case "Medium":
+        return "bg-yellow-100 text-yellow-800 border-yellow-300";
+      case "Hard":
+        return "bg-red-100 text-red-800 border-red-300";
+      default:
+        return "bg-gray-100 text-gray-800 border-gray-300";
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
@@ -529,7 +556,7 @@ export function CollaborationWorkspace() {
           <div className="flex-1">
             <div className="flex items-center gap-2 mb-2 flex-wrap">
               <h2 className="text-xl font-semibold text-gray-900">{roomData.questionTitle}</h2>
-              <Badge className="bg-green-100 text-green-800 border border-green-300">
+              <Badge className={getDifficultyColor(roomData.questionDifficulty)}>
                 {roomData.questionDifficulty}
               </Badge>
               {displayTopics.map((topic) => (
@@ -542,7 +569,38 @@ export function CollaborationWorkspace() {
                 Live Session
               </Badge>
             </div>
-            <p className="text-sm text-gray-600">{roomData.questionDescription}</p>
+            <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <div className="mt-2 space-y-1 text-sm leading-5 text-slate-700">
+                {descriptionParagraphs.length > 0 ? (
+                  descriptionParagraphs.map((paragraph, index) => (
+                    <p key={index} className="whitespace-pre-line">
+                      {paragraph}
+                    </p>
+                  ))
+                ) : (
+                  <p>No description provided for this question.</p>
+                )}
+              </div>
+            </div>
+            {roomData.imageUrls && roomData.imageUrls.length > 0 && (
+              <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                {roomData.imageUrls.map((imageUrl, index) => (
+                  <div key={index} className="rounded-lg border border-gray-300 bg-white p-2">
+                    <img
+                      src={imageUrl}
+                      alt={`Question image ${index + 1}`}
+                      className="mx-auto h-auto max-h-40 w-auto max-w-full rounded-md object-contain"
+                      onError={(e) => {
+                        console.error('Failed to load image:', imageUrl);
+                        (e.target as HTMLImageElement).style.display = 'none';
+                      }}
+                    />
+                  </div>
+                ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

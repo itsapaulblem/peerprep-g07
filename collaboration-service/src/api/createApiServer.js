@@ -51,6 +51,7 @@ async function initializeRoomQuestion(redisClient, roomId, room) {
             const questionTitle = pickedQuestion?.title || fallbackTitle;
             const questionDescription = pickedQuestion?.description || fallbackDescription;
             const questionId = pickedQuestion?.questionId ? String(pickedQuestion.questionId) : '';
+            const imageUrls = Array.isArray(pickedQuestion?.imageUrls) ? pickedQuestion.imageUrls : [];
             const question = `${questionTitle}\n\n${questionDescription}`;
 
             await redisClient.hSet(`room:${roomId}`, {
@@ -58,6 +59,7 @@ async function initializeRoomQuestion(redisClient, roomId, room) {
                 questionTitle,
                 questionDescription,
                 question,
+                imageUrls: JSON.stringify(imageUrls),
             });
         } catch (err) {
             console.error('Failed to initialize room question:', err);
@@ -69,6 +71,7 @@ async function initializeRoomQuestion(redisClient, roomId, room) {
                 questionTitle: fallbackTitle,
                 questionDescription: fallbackDescription,
                 question: `${fallbackTitle}\n\n${fallbackDescription}`,
+                imageUrls: JSON.stringify([]),
             });
         } finally {
             await redisClient.del(lockKey);
@@ -129,6 +132,18 @@ function createApiServer(redisClient) {
                 room = await initializeRoomQuestion(redisClient, roomId, room);
             }
 
+            let imageUrls = [];
+            if (room.imageUrls) {
+                try {
+                    const parsed = JSON.parse(room.imageUrls);
+                    if (Array.isArray(parsed)) {
+                        imageUrls = parsed.filter((item) => typeof item === 'string');
+                    }
+                } catch (err) {
+                    console.error('Invalid imageUrls in redis:', err);
+                }
+            }
+
             return res.json({
                 question: room.question || `${room.questionTitle || ''}\n\n${room.questionDescription || ''}`,
                 questionId: room.questionId || '',
@@ -138,6 +153,7 @@ function createApiServer(redisClient) {
                 questionTopic: room.questionTopic,
                 questionDifficulty: room.questionDifficulty,
                 participantUserIds,
+                imageUrls,
                 chatLog
             });
         } catch (err) {
