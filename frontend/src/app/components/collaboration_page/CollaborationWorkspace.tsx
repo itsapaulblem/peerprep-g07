@@ -106,6 +106,7 @@ export function CollaborationWorkspace() {
   const [testCaseResults, setTestCaseResults] = useState<TestCaseResult[]>([]);
   const [activeTab, setActiveTab] = useState<"console" | "testcases">("console");
   const [showOutput, setShowOutput] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const editorRef = useRef<any>(null);
 
   // Pull roomId from URL query string (?roomId=...).
