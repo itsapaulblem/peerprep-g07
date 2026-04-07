@@ -3,11 +3,8 @@ import { Badge } from "@/app/components/ui/badge";
 import { Code2, Users, LogOut, User, Radio } from "lucide-react";
 import Chatbox, { type ChatboxHandle } from "./Chatbox";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import * as Y from "yjs";
-import { WebsocketProvider } from "y-websocket";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { MonacoBinding } from "y-monaco";
-import Editor from "@monaco-editor/react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import UIEditor from "./Editor";
 import { toast } from "sonner";
 
 const languageMap: Record<string, string> = {
@@ -60,7 +57,6 @@ export function CollaborationWorkspace() {
   const baseApiUrl = import.meta.env.VITE_API_URL || "/api";
   const apiBaseUrl = `${baseApiUrl.replace(/\/$/, "")}/collab`;
   const wsScheme = window.location.protocol === "https:" ? "wss" : "ws";
-  const wsBaseUrl = import.meta.env.VITE_YJS_WS_URL || `${wsScheme}://${window.location.host}/ws/yjs`;
   const chatWsBaseUrl = import.meta.env.VITE_CHAT_WS_URL || `${wsScheme}://${window.location.host}/ws/chat`;
 
   // Screen state for room data loading and failure handling.
@@ -91,20 +87,13 @@ export function CollaborationWorkspace() {
     }
   }, []);
 
-  // Prefer username from JWT, then local storage, then generated fallback.
-  const username = useMemo(() => {
+  // Set username from JWT, then generated fallback.
+  const username = useMemo(() => {  
     if (tokenPayload?.username && tokenPayload.username.trim()) {
-      localStorage.setItem("peerprep_username", tokenPayload.username);
       return tokenPayload.username;
     }
 
-    const existingUser = localStorage.getItem("peerprep_username");
-    if (existingUser) {
-      return existingUser;
-    }
-
     const generatedUser = `User-${Math.floor(Math.random() * 10000)}`;
-    localStorage.setItem("peerprep_username", generatedUser);
     return generatedUser;
   }, [tokenPayload]);
 
@@ -176,6 +165,11 @@ export function CollaborationWorkspace() {
         });
 
         if (!res.ok) {
+          const storedRoomId = localStorage.getItem("roomId");
+          if (storedRoomId === roomId) {
+            localStorage.removeItem("roomId");
+          }
+          navigate("/");
           throw new Error("Room not found");
         }
 
@@ -202,7 +196,7 @@ export function CollaborationWorkspace() {
     fetchRoom();
   }, [roomId, apiBaseUrl]);
 
-  const handleUserLeft = (departingUser: string) => {
+  const handleUserLeft = useCallback((departingUser: string) => {
     if (departingUser !== username) {
       toast.info(`${departingUser} has left the room.`);
     }
@@ -217,25 +211,43 @@ export function CollaborationWorkspace() {
         participantUserIds: prev.participantUserIds.filter((participantId) => participantId !== departingUser),
       };
     });
-  };
+  }, [username]);
 
-  // Attach Yjs + Monaco collaborative binding when editor is mounted.
-  const handleEditorMount = (editor: any) => {
-    if (!roomId) {
-      return;
+  const handleUserJoined = useCallback((joinedUser: string) => {
+    // Show toast only when another user joins, not for self
+    if (joinedUser !== username) {
+      toast.info(`${joinedUser} has joined the room.`);
     }
 
-    const ydoc = new Y.Doc();
-    const provider = new WebsocketProvider(wsBaseUrl, roomId, ydoc);
-    const yText = ydoc.getText("monaco");
-    const binding = new MonacoBinding(yText, editor.getModel(), new Set([editor]));
+    setRoomData((prev) => {
+      if (!prev?.participantUserIds) {
+        return prev;
+      }
 
-    editor.onDidDispose(() => {
-      binding.destroy();
-      provider.destroy();
-      ydoc.destroy();
+      // Add to participants only if not already present
+      if (!prev.participantUserIds.includes(joinedUser)) {
+        return {
+          ...prev,
+          participantUserIds: [...prev.participantUserIds, joinedUser],
+        };
+      }
+
+      return prev;
     });
-  };
+  }, [username]);
+
+  // Send best-effort user_left message when page unloads to notify other users
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      chatboxRef.current?.sendUserLeft(username);
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [username]);
 
   // Leave room and clear local room marker used for quick re-entry.
   const handleLeaveRoom = () => {
@@ -347,19 +359,17 @@ export function CollaborationWorkspace() {
               <h3 className="font-semibold">Code Editor</h3>
             </div>
             <div className="flex items-center gap-2">
-              <Badge variant="secondary" className="text-xs border border-gray-300">{languageMap[roomData.programmingLanguage]}</Badge>
+              <Badge variant="secondary" className="text-xs border border-gray-300">
+                {languageMap[roomData.programmingLanguage]}
+              </Badge>
             </div>
           </div>
 
           <div className="border-2 border-gray-300 rounded-lg p-4 bg-gray-50 font-mono text-sm min-h-[400px]">
             <div className="space-y-2 text-gray-700">
-              <Editor
-                key={roomId ?? "default-room"}
-                height="400px"
-                language={roomData.programmingLanguage}
-                defaultValue=""
-                theme="vs-dark"
-                onMount={(editor: any) => handleEditorMount(editor)}
+              <UIEditor 
+                roomId={roomId || ""} 
+                programmingLanguage={roomData.programmingLanguage} 
               />
             </div>
           </div>
@@ -372,6 +382,7 @@ export function CollaborationWorkspace() {
           username={username}
           initialMessages={roomData.chatLog || []}
           onUserLeft={handleUserLeft}
+          onUserJoined={handleUserJoined}
         />
       </div>
     </div>
