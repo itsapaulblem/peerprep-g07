@@ -179,16 +179,12 @@ export async function updateUser(req, res) {
       return res.status(404).json({ error: "User not found" });
     }
 
-    const updatedUser = mapUserToView(result);
     const token = jwt.sign(
-      {
-        id: updatedUser.id,
-        email: updatedUser.email,
-        username: updatedUser.username,
-      },
+      { id: result.id, email: result.email, username: result.username },
       process.env.JWT_SECRET,
       { expiresIn: "3d" },
     );
+    const updatedUser = mapUserToView(result);
 
     return res.status(200).json({ ...updatedUser, token });
   } catch (error) {
