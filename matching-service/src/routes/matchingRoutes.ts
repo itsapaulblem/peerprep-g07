@@ -1,10 +1,12 @@
 import { parse } from 'url';
 import { WebSocket } from 'ws';
 import { handleAcceptMatch, handleCancel, handleEnqueue } from '../controllers/matchingController';
+import { redis } from '../redis/redisClient';
+import { QUEUED_USERS_KEY } from '../redis/redisKeys';
 import { wsConnectionStore } from '../store/matchingStore';
 import { Difficulty, Language, Topic } from '../types';
 
-export function handleWsConnection(ws: WebSocket, req: Request) {
+export async function handleWsConnection(ws: WebSocket, req: Request) {
   const { query } = parse(req.url ?? '', true);
   const userId = query.userId;
 
@@ -13,9 +15,16 @@ export function handleWsConnection(ws: WebSocket, req: Request) {
     return;
   }
 
-  // Each user may only hold one active matching request
-  if (wsConnectionStore.has(userId)) {
-    ws.close(1008, 'User already has an active matching request');
+  try {
+    const isAlreadyQueued = await redis.hexists(QUEUED_USERS_KEY, userId);
+    if (isAlreadyQueued === 1) {
+      sendError(ws, 'User is already in a queue.');
+      ws.close(1008, 'User already has an active matching request');
+      return;
+    }
+  } catch {
+    sendError(ws, 'Failed to validate queue state. Please try again.');
+    ws.close(1011, 'Queue state validation failed');
     return;
   }
 

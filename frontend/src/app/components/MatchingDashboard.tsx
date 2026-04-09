@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,9 +25,9 @@ import {
 import { Badge } from "../../app/components/ui/badge";
 import { Button } from "../../app/components/ui/button";
 import { Label } from "../../app/components/ui/label";
+import { getProfileByUsername, UserProfile } from "../services/authService";
 import { getTopics } from "../services/questionService";
 import { extractApiErrorMessage } from "../utils/apiError";
-import { getProfileByUsername, UserProfile } from "../services/authService";
 
 type MatchingState =
   | "idle"
@@ -148,7 +149,6 @@ export function MatchingDashboard({ onMatchingStateChange }: MatchingDashboardPr
       wsRef.current = null;
     }
 
-    setMatchingState("searching");
     setTimeRemaining(30);
     setShowWarning(false);
     setMatchData(null);
@@ -204,7 +204,8 @@ export function MatchingDashboard({ onMatchingStateChange }: MatchingDashboardPr
       }
 
       if (msg.type === "queued") {
-        // Already showing "searching" state
+
+        setMatchingState("searching");
       } else if (msg.type === "match_pending") {
         const pendingMatch = msg.pendingMatch as PendingMatchInfo;
         const remainingTime = Math.max(
@@ -242,7 +243,9 @@ export function MatchingDashboard({ onMatchingStateChange }: MatchingDashboardPr
       } else if (msg.type === "match_abandoned") {
         setMatchingState("abandoned");
       } else if (msg.type === "error") {
-        setErrorMessage(msg.message as string);
+        const wsErrorMessage = msg.message as string;
+        toast.error(wsErrorMessage);
+        setErrorMessage(wsErrorMessage);
         setMatchingState("idle");
       }
     };
@@ -305,7 +308,7 @@ export function MatchingDashboard({ onMatchingStateChange }: MatchingDashboardPr
   const navigate = useNavigate();
 
 
-  // This is to check if users are in an exisiting room and they have close the tab, 
+  // This is to check if users are in an exisiting room and they have close the tab,
   // if yes then navigate to the collaboration page
   useEffect(() => {
     const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:3004/api";
