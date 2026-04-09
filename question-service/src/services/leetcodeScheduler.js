@@ -1,6 +1,10 @@
 import axios from 'axios';
 import cron from 'node-cron';
 import pool from '../db/index.js';
+import {
+  findDuplicateQuestion,
+  isQuestionUniqueViolation,
+} from './questionIdentityService.js';
 
 // ── Config ────────────────────────────────────────────────────
 const LEETCODE_API = process.env.LEETCODE_API_URL || 'https://alfa-leetcode-api.onrender.com';
@@ -400,13 +404,10 @@ const saveSkip = async (skip) => {
 };
 
 // ── Duplicate detection ───────────────────────────────────────
-const getExistingQuestion = async (title) => {
+const getDuplicateQuestion = async ({ title, leetcodeLink }) => {
   try {
-    const result = await pool.query(
-      'SELECT * FROM questions WHERE title = $1 LIMIT 1',
-      [title]
-    );
-    return result.rows[0] || null;
+    const duplicate = await findDuplicateQuestion({ title, leetcodeLink });
+    return duplicate?.question || null;
   } catch (err) {
     console.error('[scheduler] Duplicate check failed:', err.message);
     return null;
@@ -543,11 +544,6 @@ const runSync = async () => {
   let totalProcessed = 0;
 
   try {
-    const removedQuestions = await cleanupIncompleteLeetCodeQuestions();
-    if (removedQuestions.length > 0) {
-      console.log(`[scheduler] Removed ${removedQuestions.length} incomplete LeetCode question(s) from the DB.`);
-    }
-
     while (totalProcessed < CONFIG.fetchLimitPerRun) {
       if (isShuttingDown) {
         console.log('[scheduler] Shutdown requested — stopping sync gracefully.');
@@ -571,9 +567,13 @@ const runSync = async () => {
 
         const slug = problem.titleSlug;
         const title = problem.title;
+        const candidateLeetcodeLink = `${LEETCODE_LINK_PREFIX}${slug}/`;
 
         // Duplicate check
-        const existingQuestion = await getExistingQuestion(title);
+        let existingQuestion = await getDuplicateQuestion({
+          title,
+          leetcodeLink: candidateLeetcodeLink,
+        });
         if (existingQuestion && !hasPlaceholderDetails(existingQuestion)) {
           tracker.skipped++;
           tracker.log('skipped', title, '(already in DB)');
@@ -593,6 +593,20 @@ const runSync = async () => {
 
         // Build and insert
         const payload = buildQuestionPayload({ detail, problem, slug });
+        if (!existingQuestion) {
+          existingQuestion = await getDuplicateQuestion({
+            title: payload.title,
+            leetcodeLink: payload.leetcodeLink,
+          });
+          if (existingQuestion && !hasPlaceholderDetails(existingQuestion)) {
+            tracker.skipped++;
+            tracker.log('skipped', payload.title, '(already in DB)');
+            totalProcessed++;
+            await sleep(CONFIG.delayBetweenQuestions);
+            continue;
+          }
+        }
+
         if (!hasRequiredQuestionContent(payload)) {
           tracker.skipped++;
           tracker.log('skipped', title, '(missing description or test cases)');
@@ -612,6 +626,13 @@ const runSync = async () => {
             tracker.log('inserted', payload.title, `(ID: ${inserted.question_id})`);
           }
         } catch (err) {
+          if (isQuestionUniqueViolation(err)) {
+            tracker.skipped++;
+            tracker.log('skipped', payload.title, '(already in DB)');
+            totalProcessed++;
+            await sleep(CONFIG.delayBetweenQuestions);
+            continue;
+          }
           tracker.failed++;
           tracker.log('failed', payload.title, `(DB error: ${err.message})`);
         }

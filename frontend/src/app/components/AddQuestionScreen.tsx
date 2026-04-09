@@ -15,7 +15,11 @@ import {
   Info
 } from "lucide-react";
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
-import { createQuestion, getTopics } from "@/app/services/questionService";
+import {
+  createQuestion,
+  getQuestionRequestErrorMessage,
+  getTopics,
+} from "@/app/services/questionService";
 
 interface AddQuestionScreenProps {
   onBack: () => void;
@@ -156,6 +160,10 @@ export function AddQuestionScreen({ onBack, onSave }: AddQuestionScreenProps) {
       setError("Title and description are required");
       return;
     }
+    if (!leetcodeLink.trim()) {
+      setError("LeetCode link is required.");
+      return;
+    }
     if (selectedTopics.length === 0) {
       setError("Select at least one topic");
       return;
@@ -172,13 +180,13 @@ export function AddQuestionScreen({ onBack, onSave }: AddQuestionScreenProps) {
         difficulty,
         topics: selectedTopics,
         testCases: testCases.map((tc) => ({ input: tc.input, output: tc.expectedOutput })),
-        leetcodeLink: leetcodeLink || undefined,
+        leetcodeLink: leetcodeLink.trim(),
         imageFiles: selectedImages.length > 0 ? selectedImages : undefined,
       });
       if (onSave) onSave();
       onBack();
     } catch (err: any) {
-      setError(err.response?.data?.message || err.response?.data?.error || "Failed to create question");
+      setError(getQuestionRequestErrorMessage(err, "Failed to create question"));
     } finally {
       setIsLoading(false);
     }
@@ -326,7 +334,7 @@ export function AddQuestionScreen({ onBack, onSave }: AddQuestionScreenProps) {
               {/* LeetCode Link */}
               <div className="space-y-2 md:col-span-2">
                 <Label htmlFor="leetcodeLink" className="text-gray-700 font-medium">
-                  LeetCode Link
+                  LeetCode Link <span className="text-red-500">*</span>
                 </Label>
                 <Input
                   id="leetcodeLink"

@@ -1,3 +1,4 @@
+import type { AxiosError } from 'axios';
 import apiClient from './apiClient';
 
 export interface Question {
@@ -48,6 +49,64 @@ export interface CreateQuestionData {
   topics: string[];
   imageFiles?: File[];
   existingImageUrls?: string[];
+}
+
+interface QuestionErrorResponse {
+  error?: string;
+  message?: string;
+  duplicateField?: 'title' | 'leetcodeLink' | 'unknown';
+  duplicateQuestion?: {
+    questionId?: number;
+    title?: string;
+    leetcodeLink?: string | null;
+  } | null;
+  missingFields?: string[];
+}
+
+const getDuplicateQuestionMessage = (responseData: QuestionErrorResponse) => {
+  if (responseData.duplicateField === 'title') {
+    if (responseData.duplicateQuestion?.title) {
+      return `A question with the title "${responseData.duplicateQuestion.title}" already exists.`;
+    }
+    return 'A question with this title already exists.';
+  }
+
+  if (responseData.duplicateField === 'leetcodeLink') {
+    if (responseData.duplicateQuestion?.title) {
+      return `This LeetCode link is already used by "${responseData.duplicateQuestion.title}".`;
+    }
+    return 'A question with this LeetCode link already exists.';
+  }
+
+  return responseData.message || 'A duplicate question already exists.';
+};
+
+export function getQuestionRequestErrorMessage(error: unknown, fallbackMessage: string) {
+  const responseData = (error as AxiosError<QuestionErrorResponse>)?.response?.data;
+
+  if (!responseData) {
+    return fallbackMessage;
+  }
+
+  if (responseData.error === 'Duplicate Question') {
+    return getDuplicateQuestionMessage(responseData);
+  }
+
+  if (
+    responseData.error === 'Validation Error' &&
+    Array.isArray(responseData.missingFields) &&
+    responseData.missingFields.length === 1
+  ) {
+    if (responseData.missingFields[0] === 'title') {
+      return 'Question title is required.';
+    }
+
+    if (responseData.missingFields[0] === 'leetcodeLink') {
+      return 'LeetCode link is required.';
+    }
+  }
+
+  return responseData.message || responseData.error || fallbackMessage;
 }
 
 function buildQuestionFormData(data: Partial<CreateQuestionData>) {

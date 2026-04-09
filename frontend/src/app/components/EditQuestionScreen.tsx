@@ -15,7 +15,12 @@ import {
   Trash2
 } from "lucide-react";
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
-import { getTopics, updateQuestion, type Question } from "@/app/services/questionService";
+import {
+  getQuestionRequestErrorMessage,
+  getTopics,
+  updateQuestion,
+  type Question,
+} from "@/app/services/questionService";
 
 interface EditQuestionScreenProps {
   question: Question;
@@ -168,6 +173,10 @@ export function EditQuestionScreen({ question, onBack, onSave }: EditQuestionScr
       setError("Title and description are required");
       return;
     }
+    if (!leetcodeLink.trim()) {
+      setError("LeetCode link is required.");
+      return;
+    }
     if (selectedTopics.length === 0) {
       setError("Select at least one topic");
       return;
@@ -185,14 +194,14 @@ export function EditQuestionScreen({ question, onBack, onSave }: EditQuestionScr
         difficulty,
         topics: selectedTopics,
         testCases: testCases.map((tc) => ({ input: tc.input, output: tc.expectedOutput })),
-        leetcodeLink: leetcodeLink || undefined,
+        leetcodeLink: leetcodeLink.trim(),
         existingImageUrls,
         imageFiles: selectedImages.length > 0 ? selectedImages : undefined,
       });
       if (onSave) onSave();
       onBack();
     } catch (err: any) {
-      setError(err.response?.data?.message || err.response?.data?.error || "Failed to update question");
+      setError(getQuestionRequestErrorMessage(err, "Failed to update question"));
     } finally {
       setIsLoading(false);
     }
@@ -340,7 +349,7 @@ export function EditQuestionScreen({ question, onBack, onSave }: EditQuestionScr
               {/* LeetCode Link */}
               <div className="space-y-2 md:col-span-2">
                 <Label htmlFor="leetcodeLink" className="text-gray-700 font-medium">
-                  LeetCode Link
+                  LeetCode Link <span className="text-red-500">*</span>
                 </Label>
                 <Input
                   id="leetcodeLink"

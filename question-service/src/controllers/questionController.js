@@ -1,5 +1,11 @@
 import pool from '../db/index.js';
 import { uploadImage, deleteImages } from '../services/s3Service.js';
+import {
+  buildDuplicateResponse,
+  buildUniqueViolationResponse,
+  findDuplicateQuestion,
+  isQuestionUniqueViolation,
+} from '../services/questionIdentityService.js';
 
 const VALID_DIFFICULTIES = ['Easy', 'Medium', 'Hard'];
 const DEFAULT_QUESTION_PAGE_SIZE = 12;
@@ -37,6 +43,11 @@ const parsePositiveInteger = (value, fallback) => {
   const parsed = parseInt(value, 10);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 };
+
+const isBlank = (value) => value === undefined || value === null || String(value).trim() === '';
+
+const sendDuplicateResponse = (res, duplicate) =>
+  res.status(409).json(buildDuplicateResponse(duplicate));
 
 // ────────────────────────────────────────────────────────────
 // Helper: validate and upload image files to S3
@@ -86,9 +97,10 @@ const createQuestion = async (req, res) => {
 
   // Validate required fields
   const missing = [];
-  if (!title) missing.push('title');
-  if (!description) missing.push('description');
-  if (!difficulty) missing.push('difficulty');
+  if (isBlank(title)) missing.push('title');
+  if (isBlank(description)) missing.push('description');
+  if (isBlank(difficulty)) missing.push('difficulty');
+  if (isBlank(leetcodeLink)) missing.push('leetcodeLink');
   if (!topics || !Array.isArray(topics) || topics.length === 0) missing.push('topics');
   if (!testCases || !Array.isArray(testCases) || testCases.length === 0) missing.push('testCases');
 
@@ -108,7 +120,17 @@ const createQuestion = async (req, res) => {
     });
   }
 
-    // Upload images to S3 if any were attached
+  try {
+    const duplicateQuestion = await findDuplicateQuestion({ title, leetcodeLink });
+    if (duplicateQuestion) {
+      return sendDuplicateResponse(res, duplicateQuestion);
+    }
+  } catch (err) {
+    console.error('[createQuestion] duplicate check failed:', err);
+    return res.status(500).json({ error: 'Internal Server Error', message: err.message });
+  }
+
+  // Upload images to S3 if any were attached
   let imageUrls = [];
   try {
     imageUrls = await handleImageUploads(req.files);
@@ -127,7 +149,7 @@ const createQuestion = async (req, res) => {
         description,
         constraints || null,
         JSON.stringify(testCases),
-        leetcodeLink || null,
+        leetcodeLink,
         difficulty,
         topics,
         imageUrls || [],
@@ -139,6 +161,19 @@ const createQuestion = async (req, res) => {
       question: formatQuestion(result.rows[0]),
     });
   } catch (err) {
+    if (imageUrls.length > 0) {
+      await deleteImages(imageUrls).catch(e => console.error('[createQuestion] S3 cleanup failed:', e));
+    }
+    if (isQuestionUniqueViolation(err)) {
+      const duplicateQuestion = await findDuplicateQuestion({ title, leetcodeLink }).catch(e => {
+        console.error('[createQuestion] duplicate lookup after unique violation failed:', e);
+        return null;
+      });
+      if (duplicateQuestion) {
+        return sendDuplicateResponse(res, duplicateQuestion);
+      }
+      return res.status(409).json(buildUniqueViolationResponse(err));
+    }
     console.error('[createQuestion]', err);
     return res.status(500).json({ error: 'Internal Server Error', message: err.message });
   }
@@ -398,6 +433,13 @@ const updateQuestion = async (req, res) => {
     });
   }
 
+  if (existingImageUrls !== undefined && !Array.isArray(existingImageUrls)) {
+    return res.status(400).json({
+      error: 'Validation Error',
+      message: 'existingImageUrls must be an array.',
+    });
+  }
+
   try {
     // Check question exists
     const existing = await pool.query('SELECT * FROM questions WHERE question_id = $1', [id]);
@@ -406,6 +448,44 @@ const updateQuestion = async (req, res) => {
     }
 
     const current = existing.rows[0];
+    const finalTitle = title ?? current.title;
+    const finalDescription = description ?? current.description;
+    const finalConstraints = constraints !== undefined ? constraints : current.constraints;
+    const finalTestCases = testCases ? JSON.stringify(testCases) : current.test_cases;
+    const finalLeetcodeLink = leetcodeLink !== undefined ? leetcodeLink : current.leetcode_link;
+    const finalDifficulty = difficulty ?? current.difficulty;
+    const finalTopics = topics ?? current.topics;
+
+    const missingFinalFields = [];
+    if (isBlank(finalTitle)) missingFinalFields.push('title');
+    if (isBlank(finalDescription)) missingFinalFields.push('description');
+    if (isBlank(finalDifficulty)) missingFinalFields.push('difficulty');
+    if (isBlank(finalLeetcodeLink)) missingFinalFields.push('leetcodeLink');
+
+    if (missingFinalFields.length > 0) {
+      return res.status(400).json({
+        error: 'Validation Error',
+        message: 'The following required fields are missing or invalid.',
+        missingFields: missingFinalFields,
+      });
+    }
+
+    if (!VALID_DIFFICULTIES.includes(finalDifficulty)) {
+      return res.status(400).json({
+        error: 'Validation Error',
+        message: `difficulty must be one of: ${VALID_DIFFICULTIES.join(', ')}`,
+      });
+    }
+
+    const duplicateQuestion = await findDuplicateQuestion({
+      title: finalTitle,
+      leetcodeLink: finalLeetcodeLink,
+      excludeQuestionId: current.question_id,
+    });
+
+    if (duplicateQuestion) {
+      return sendDuplicateResponse(res, duplicateQuestion);
+    }
 
     // ── Image handling ───────────────────────────────────────
     // 1. Upload any new image files to S3
@@ -418,47 +498,71 @@ const updateQuestion = async (req, res) => {
  
     // 2. Determine final image_urls for the DB
     let finalImageUrls;
+    let removedUrls = [];
+    const currentImageUrls = Array.isArray(current.image_urls) ? current.image_urls : [];
     if (existingImageUrls !== undefined) {
       // Admin explicitly specified which old URLs to keep
-      // Delete any old URLs that are no longer in the keep list
-      const removedUrls = current.image_urls.filter(url => !existingImageUrls.includes(url));
-      if (removedUrls.length > 0) {
-        await deleteImages(removedUrls).catch(e => console.error('[updateQuestion] S3 delete failed:', e));
-      }
+      removedUrls = currentImageUrls.filter(url => !existingImageUrls.includes(url));
       // Final = kept old URLs + newly uploaded URLs
       finalImageUrls = [...existingImageUrls, ...newlyUploadedUrls];
     } else if (newlyUploadedUrls.length > 0) {
       // No existingImageUrls specified — just append new uploads to existing
-      finalImageUrls = [...current.image_urls, ...newlyUploadedUrls];
+      finalImageUrls = [...currentImageUrls, ...newlyUploadedUrls];
     } else {
       // No image changes at all — keep existing
-      finalImageUrls = current.image_urls;
+      finalImageUrls = currentImageUrls;
     }
 
-    const result = await pool.query(
-      `UPDATE questions SET
-         title         = $1,
-         description   = $2,
-         constraints   = $3,
-         test_cases    = $4,
-         leetcode_link = $5,
-         difficulty    = $6,
-         topics        = $7,
-         image_urls    = $8
-       WHERE question_id = $9
-       RETURNING *`,
-      [
-        title        ?? current.title,
-        description  ?? current.description,
-        constraints  !== undefined ? constraints : current.constraints,
-        testCases    ? JSON.stringify(testCases) : current.test_cases,
-        leetcodeLink !== undefined ? leetcodeLink : current.leetcode_link,
-        difficulty   ?? current.difficulty,
-        topics       ?? current.topics,
-        finalImageUrls,
-        id,
-      ]
-    );
+    let result;
+    try {
+      result = await pool.query(
+        `UPDATE questions SET
+           title         = $1,
+           description   = $2,
+           constraints   = $3,
+           test_cases    = $4,
+           leetcode_link = $5,
+           difficulty    = $6,
+           topics        = $7,
+           image_urls    = $8
+         WHERE question_id = $9
+         RETURNING *`,
+        [
+          finalTitle,
+          finalDescription,
+          finalConstraints,
+          finalTestCases,
+          finalLeetcodeLink,
+          finalDifficulty,
+          finalTopics,
+          finalImageUrls,
+          id,
+        ]
+      );
+    } catch (err) {
+      if (newlyUploadedUrls.length > 0) {
+        await deleteImages(newlyUploadedUrls).catch(e => console.error('[updateQuestion] new image cleanup failed:', e));
+      }
+      if (isQuestionUniqueViolation(err)) {
+        const duplicateQuestion = await findDuplicateQuestion({
+          title: finalTitle,
+          leetcodeLink: finalLeetcodeLink,
+          excludeQuestionId: current.question_id,
+        }).catch(e => {
+          console.error('[updateQuestion] duplicate lookup after unique violation failed:', e);
+          return null;
+        });
+        if (duplicateQuestion) {
+          return sendDuplicateResponse(res, duplicateQuestion);
+        }
+        return res.status(409).json(buildUniqueViolationResponse(err));
+      }
+      throw err;
+    }
+
+    if (removedUrls.length > 0) {
+      await deleteImages(removedUrls).catch(e => console.error('[updateQuestion] S3 delete failed:', e));
+    }
 
     return res.status(200).json({
       message: 'Question updated successfully.',

@@ -5,12 +5,29 @@ CREATE TABLE IF NOT EXISTS questions (
     description TEXT NOT NULL,
     constraints TEXT,
     test_cases JSONB NOT NULL DEFAULT '[]',
-    leetcode_link VARCHAR(500),
+    leetcode_link VARCHAR(500) NOT NULL,
     difficulty VARCHAR(10) NOT NULL CHECK (difficulty IN ('Easy', 'Medium', 'Hard')),
     topics TEXT[] NOT NULL DEFAULT '{}',
     image_urls TEXT[] DEFAULT '{}',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    CONSTRAINT questions_leetcode_link_required CHECK (leetcode_link IS NOT NULL AND BTRIM(leetcode_link) <> '')
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS questions_unique_normalized_leetcode_link
+ON questions (
+  LOWER(
+    REGEXP_REPLACE(
+      REGEXP_REPLACE(BTRIM(leetcode_link), '[?#].*$', ''),
+      '/+$',
+      ''
+    )
+  )
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS questions_unique_normalized_title
+ON questions (
+  LOWER(REGEXP_REPLACE(BTRIM(title), '\s+', ' ', 'g'))
 );
 
 -- Stores persistent key-value state for the question service scheduler

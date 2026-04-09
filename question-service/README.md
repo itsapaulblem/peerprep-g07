@@ -29,6 +29,7 @@ question-service/
     │   └── auth.js             # requireAdmin – calls User Service to verify role
     ├── services/
     │   ├── leetcodeScheduler.js # Periodic LeetCode sync job
+    │   ├── questionIdentityService.js # Shared duplicate detection
     │   └── s3Service.js        # AWS S3 client – upload and delete images
     ├── controllers/
     │   └── questionController.js  # CRUD business logic
@@ -162,12 +163,33 @@ CREATE TABLE questions (
     description   TEXT NOT NULL,
     constraints   TEXT,
     test_cases    JSONB NOT NULL DEFAULT '[]',
-    leetcode_link VARCHAR(500),
+    leetcode_link VARCHAR(500) NOT NULL,
     difficulty    VARCHAR(10) NOT NULL CHECK (difficulty IN ('Easy', 'Medium', 'Hard')),
     topics        TEXT[] NOT NULL DEFAULT '{}',
     image_urls    TEXT[] DEFAULT '{}',
     created_at    TIMESTAMPTZ DEFAULT NOW(),
-    updated_at    TIMESTAMPTZ DEFAULT NOW()
+    updated_at    TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT questions_leetcode_link_required CHECK (
+        leetcode_link IS NOT NULL AND BTRIM(leetcode_link) <> ''
+    )
+);
+```
+
+```sql
+CREATE UNIQUE INDEX questions_unique_normalized_leetcode_link
+ON questions (
+    LOWER(
+        REGEXP_REPLACE(
+            REGEXP_REPLACE(BTRIM(leetcode_link), '[?#].*$', ''),
+            '/+$',
+            ''
+        )
+    )
+);
+
+CREATE UNIQUE INDEX questions_unique_normalized_title
+ON questions (
+    LOWER(REGEXP_REPLACE(BTRIM(title), '\s+', ' ', 'g'))
 );
 ```
 
@@ -180,6 +202,7 @@ CREATE TABLE scheduler_state (
 ```
 
 - `test_cases` is stored as **JSONB** so Postgres understands the structure, validates it, and allows future querying inside the field.
+- `leetcode_link` is required, and duplicates are blocked by normalized LeetCode link and normalized title.
 - `image_urls` stores only URLs. Actual images are hosted on a third-party service.
 - `updated_at` is automatically updated via a Postgres trigger on every row update.
 - `scheduler_state` stores the persistent LeetCode pagination offset for the scheduler.
@@ -386,7 +409,7 @@ GET /questions/random?topic=Algorithms&difficulty=Hard
 
 **Content-Type:** `multipart/form-data`
 
-**Required fields:** `title`, `description`, `difficulty`, `topics`, `testCases`
+**Required fields:** `title`, `description`, `leetcodeLink`, `difficulty`, `topics`, `testCases`
 
 **Request Body**
 | Field | Type | Required | Description |
@@ -395,7 +418,7 @@ GET /questions/random?topic=Algorithms&difficulty=Hard
 | `description` | text | Yes | Full question description |
 | `constraints` | text | No | Constraints string |
 | `testCases` | text (JSON string) | Yes | e.g. `[{"input":"...","output":"..."}]` |
-| `leetcodeLink` | text | No | URL to LeetCode problem |
+| `leetcodeLink` | text | Yes | URL to LeetCode problem |
 | `difficulty` | text | Yes | `Easy`, `Medium`, or `Hard` |
 | `topics` | text (JSON string) | Yes | e.g. `["Arrays","Hash Table"]` |
 | `images` | file(s) | No | Image files (jpeg, png, gif, webp — max 5MB each) |
@@ -407,7 +430,21 @@ GET /questions/random?topic=Algorithms&difficulty=Hard
 {
   "error": "Validation Error",
   "message": "The following required fields are missing or invalid.",
-  "missingFields": ["title", "difficulty"]
+  "missingFields": ["title", "leetcodeLink", "difficulty"]
+}
+```
+
+**Response 409** — duplicate normalized title or LeetCode link:
+```json
+{
+  "error": "Duplicate Question",
+  "message": "A question with this LeetCode link or title already exists.",
+  "duplicateField": "leetcodeLink",
+  "duplicateQuestion": {
+    "questionId": 1,
+    "title": "Two Sum",
+    "leetcodeLink": "https://leetcode.com/problems/two-sum/"
+  }
 }
 ```
 
@@ -421,7 +458,7 @@ GET /questions/random?topic=Algorithms&difficulty=Hard
 
 **Content-Type:** `multipart/form-data`
 
-Send only the fields you want to update. All fields are optional — unset fields keep their existing values.
+Send only the fields you want to update. All fields are optional — unset fields keep their existing values. If `leetcodeLink` is omitted, the existing link is kept; the final stored value must still be non-blank.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -445,6 +482,8 @@ Send only the fields you want to update. All fields are optional — unset field
 | No image changes | Omit both `existingImageUrls` and `images` |
 
 **Response 200** — updated question object.
+
+**Response 409** — duplicate normalized title or LeetCode link. The response shape matches the create duplicate response.
 
 ---
 
@@ -538,6 +577,7 @@ curl -X POST http://localhost:3001/questions \
   -H "Authorization: Bearer " \
   -F "title=Two Sum" \
   -F "description=Given an array of integers..." \
+  -F "leetcodeLink=https://leetcode.com/problems/two-sum/" \
   -F "difficulty=Easy" \
   -F 'topics=["Arrays","Hash Table"]' \
   -F 'testCases=[{"input":"nums = [2,7,11,15], target = 9","output":"[0,1]"}]'
@@ -547,6 +587,7 @@ curl -X POST http://localhost:3001/questions \
   -H "Authorization: Bearer " \
   -F "title=Two Sum" \
   -F "description=Given an array of integers..." \
+  -F "leetcodeLink=https://leetcode.com/problems/two-sum/" \
   -F "difficulty=Easy" \
   -F 'topics=["Arrays","Hash Table"]' \
   -F 'testCases=[{"input":"nums = [2,7,11,15], target = 9","output":"[0,1]"}]' \
