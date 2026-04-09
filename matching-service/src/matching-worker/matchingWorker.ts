@@ -3,8 +3,8 @@ import { redis } from "../redis/redisClient";
 import { ACTIVE_QUEUES_KEY, QUEUED_USERS_KEY } from "../redis/redisKeys";
 import { DIFFICULTIES, Difficulty, Language, LANGUAGES, Topic, TOPICS } from "../types";
 import { toQueueKey } from "../utils";
-const RELAXED_MATCH_WAIT_MS = 20 * 1000;
 
+const RELAXED_MATCH_WAIT_MS = 20 * 1000;
 const DIFFICULTY_RANK: Record<Difficulty, number> = {
   easy: 0,
   medium: 1,
@@ -125,12 +125,6 @@ function parseQueueKey(queueKey: string): ParsedQueueKey | null {
   return { queueKey, topic, difficulty, language };
 }
 
-function getAdjacentDifficulties(difficulty: Difficulty): Difficulty[] {
-  if (difficulty === "easy") return ["medium"];
-  if (difficulty === "hard") return ["medium"];
-  return ["easy", "hard"];
-}
-
 function lowerDifficulty(first: Difficulty, second: Difficulty): Difficulty {
   return DIFFICULTY_RANK[first] <= DIFFICULTY_RANK[second] ? first : second;
 }
@@ -178,50 +172,55 @@ async function tryRelaxedMatch(): Promise<boolean> {
   }
 
   for (const [, byDifficulty] of queuesByTopicLanguage) {
-    for (const [difficulty, sourceQueue] of byDifficulty) {
-      const adjacentDifficulties = getAdjacentDifficulties(difficulty);
-      for (const adjacentDifficulty of adjacentDifficulties) {
-        const adjacentQueue = byDifficulty.get(adjacentDifficulty);
-        if (!adjacentQueue) {
-          continue;
-        }
+    const mediumQueue = byDifficulty.get("medium");
+    if (!mediumQueue) {
+      continue;
+    }
 
-        if (
-          DIFFICULTY_RANK[sourceQueue.difficulty] >
-          DIFFICULTY_RANK[adjacentQueue.difficulty]
-        ) {
-          continue;
-        }
+    const adjacentQueues: ParsedQueueKey[] = [];
+    const easyQueue = byDifficulty.get("easy");
+    const hardQueue = byDifficulty.get("hard");
 
-        const result = (await redis.eval(
-          LUA_DEQUEUE_RELAXED_PAIR,
-          4,
-          sourceQueue.queueKey,
-          adjacentQueue.queueKey,
-          QUEUED_USERS_KEY,
-          ACTIVE_QUEUES_KEY,
-          Date.now(),
-          RELAXED_MATCH_WAIT_MS,
-        )) as [string, string] | null;
+    if (easyQueue) {
+      adjacentQueues.push(easyQueue);
+    }
+    if (hardQueue) {
+      adjacentQueues.push(hardQueue);
+    }
 
-        if (!result) {
-          continue;
-        }
+    if (adjacentQueues.length === 2 && Math.random() < 0.5) {
+      adjacentQueues.reverse();
+    }
 
-        const [user1Id, user2Id] = result;
-        const eventDifficulty = lowerDifficulty(
-          sourceQueue.difficulty,
-          adjacentQueue.difficulty,
-        );
-        await publishPendingMatch(
-          user1Id,
-          user2Id,
-          sourceQueue.topic,
-          eventDifficulty,
-          sourceQueue.language,
-        );
-        return true;
+    for (const adjacentQueue of adjacentQueues) {
+      const result = (await redis.eval(
+        LUA_DEQUEUE_RELAXED_PAIR,
+        4,
+        mediumQueue.queueKey,
+        adjacentQueue.queueKey,
+        QUEUED_USERS_KEY,
+        ACTIVE_QUEUES_KEY,
+        Date.now(),
+        RELAXED_MATCH_WAIT_MS,
+      )) as [string, string] | null;
+
+      if (!result) {
+        continue;
       }
+
+      const [user1Id, user2Id] = result;
+      const eventDifficulty = lowerDifficulty(
+        mediumQueue.difficulty,
+        adjacentQueue.difficulty,
+      );
+      await publishPendingMatch(
+        user1Id,
+        user2Id,
+        mediumQueue.topic,
+        eventDifficulty,
+        mediumQueue.language,
+      );
+      return true;
     }
   }
 

@@ -149,16 +149,6 @@ export function MatchingDashboard({ onMatchingStateChange }: MatchingDashboardPr
       wsRef.current = null;
     }
 
-    setTimeRemaining(30);
-    setShowWarning(false);
-    setMatchData(null);
-    setPendingMatchData(null);
-    setHasAcceptedMatch(false);
-    setErrorMessage("");
-    setMatchAcceptTimeRemaining(MATCH_ACCEPT_TIMEOUT_SECONDS);
-    setPendingAcceptTimeoutSeconds(5);
-    setPendingAcceptTimeoutReason("");
-
     const token = localStorage.getItem("token");
     let username = "";
     if (token) {
@@ -204,8 +194,16 @@ export function MatchingDashboard({ onMatchingStateChange }: MatchingDashboardPr
       }
 
       if (msg.type === "queued") {
-
         setMatchingState("searching");
+        setTimeRemaining(30);
+        setShowWarning(false);
+        setMatchData(null);
+        setPendingMatchData(null);
+        setHasAcceptedMatch(false);
+        setErrorMessage("");
+        setMatchAcceptTimeRemaining(MATCH_ACCEPT_TIMEOUT_SECONDS);
+        setPendingAcceptTimeoutSeconds(5);
+        setPendingAcceptTimeoutReason("");
       } else if (msg.type === "match_pending") {
         const pendingMatch = msg.pendingMatch as PendingMatchInfo;
         const remainingTime = Math.max(

@@ -12,8 +12,8 @@ app.use(express.json());
 
 async function startBackgroundWorkers() {
   await reconcilePendingMatches();
-  setInterval(() => pollAllQueues(), 10000);
-  setInterval(() => cleanupTimedOutUsers(), 2500);
+  setInterval(() => pollAllQueues(), 7500);
+  setInterval(() => cleanupTimedOutUsers(), 2000);
   startMatchSubscriber();
 }
 
