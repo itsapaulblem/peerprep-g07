@@ -77,6 +77,7 @@ const normalizeTopicForMatching = (topic: string) =>
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
+
 export function MatchingDashboard({ onMatchingStateChange }: MatchingDashboardProps) {
   const [selectedDifficulty, setSelectedDifficulty] = useState<string>("Medium");
   const [selectedTopic, setSelectedTopic] = useState<string>("");
@@ -89,7 +90,7 @@ export function MatchingDashboard({ onMatchingStateChange }: MatchingDashboardPr
   const [showWarning, setShowWarning] = useState(false);
   const [matchData, setMatchData] = useState<MatchInfo | null>(null);
   const [pendingMatchData, setPendingMatchData] = useState<PendingMatchInfo | null>(null);
-  const [currentUserId, setCurrentUserId] = useState<string>("");
+  const [currentUsername, setCurrentUsername] = useState<string>("");
   const [peerUserProfile, setPeerUserProfile] = useState<UserProfile | null>(null);
   const [hasAcceptedMatch, setHasAcceptedMatch] = useState(false);
   const [matchAcceptTimeRemaining, setMatchAcceptTimeRemaining] = useState(MATCH_ACCEPT_TIMEOUT_SECONDS);
@@ -159,28 +160,28 @@ export function MatchingDashboard({ onMatchingStateChange }: MatchingDashboardPr
     setPendingAcceptTimeoutReason("");
 
     const token = localStorage.getItem("token");
-    let userId = "";
+    let username = "";
     if (token) {
       try {
         const payload = JSON.parse(atob(token.split(".")[1]));
-        userId = payload.username || payload.id || payload.sub || payload.email || "";
+        username = payload.username || payload.id || payload.sub || payload.email || "";
       } catch {
         // ignore malformed token
       }
     }
 
-    if (!userId) {
+    if (!username) {
       setMatchingState("idle");
       setErrorMessage("You must be logged in to match.");
       return;
     }
 
-    setCurrentUserId(userId);
+    setCurrentUsername(username);
 
     const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:3004/api";
     // Derive WS URL from the API URL: http(s)://host:port/api -> ws(s)://host:port/ws/match
     const baseUrl = apiUrl.replace(/\/api\/?$/, "");
-    const wsUrl = baseUrl.replace(/^http/, "ws") + `/ws/match?userId=${encodeURIComponent(userId)}`;
+    const wsUrl = baseUrl.replace(/^http/, "ws") + `/ws/match?userId=${encodeURIComponent(username)}`;
 
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
@@ -220,7 +221,6 @@ export function MatchingDashboard({ onMatchingStateChange }: MatchingDashboardPr
         setPendingMatchData(null);
         setHasAcceptedMatch(false);
         setMatchAcceptTimeRemaining(MATCH_ACCEPT_TIMEOUT_SECONDS);
-        localStorage.setItem("roomId", confirmedMatch.roomId);
         navigate(`/collaboration?roomId=${encodeURIComponent(confirmedMatch.roomId)}`);
       } else if (msg.type === "matched") {
         setMatchingState("matched");
@@ -228,7 +228,6 @@ export function MatchingDashboard({ onMatchingStateChange }: MatchingDashboardPr
         const confirmedMatch = msg.match as MatchInfo;
         setMatchData(confirmedMatch);
         setMatchAcceptTimeRemaining(MATCH_ACCEPT_TIMEOUT_SECONDS);
-        localStorage.setItem("roomId", confirmedMatch.roomId);
         navigate(`/collaboration?roomId=${encodeURIComponent(confirmedMatch.roomId)}`);
       } else if (msg.type === "timeout") {
         setMatchingState("timeout");
@@ -305,11 +304,33 @@ export function MatchingDashboard({ onMatchingStateChange }: MatchingDashboardPr
 
   const navigate = useNavigate();
 
-  useEffect(() => {
-    const storedRoomId = localStorage.getItem("roomId");
-    if (!storedRoomId) return;
 
-    navigate(`/collaboration?roomId=${encodeURIComponent(storedRoomId)}`);
+  // This is to check if users are in an exisiting room and they have close the tab, 
+  // if yes then navigate to the collaboration page
+  useEffect(() => {
+    const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:3004/api";
+
+    const resolveExistingRoom = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        const response = await fetch(`${apiUrl.replace(/\/$/, "")}/collab/my-room`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+
+        if (!response.ok) {
+          return;
+        }
+
+        const data = (await response.json()) as { roomId?: string };
+        if (data.roomId) {
+          navigate(`/collaboration?roomId=${encodeURIComponent(data.roomId)}`);
+        }
+      } catch {
+        // Ignore lookup failures and stay on the matching page.
+      }
+    };
+
+    void resolveExistingRoom();
   }, [navigate]);
 
   useEffect(() => {
@@ -359,6 +380,7 @@ export function MatchingDashboard({ onMatchingStateChange }: MatchingDashboardPr
     };
   }, []);
 
+  // This is to navigate to collaboration page after matching
   const navigateToCollaboration = () => {
     if (pendingMatchData) {
       if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
@@ -386,13 +408,12 @@ export function MatchingDashboard({ onMatchingStateChange }: MatchingDashboardPr
     const targetRoomId = matchData?.roomId;
     if (!targetRoomId) return;
 
-    localStorage.setItem("roomId", targetRoomId);
     navigate(`/collaboration?roomId=${encodeURIComponent(targetRoomId)}`);
   }
 
   const matchedUsers = pendingMatchData?.users ?? matchData?.users ?? null;
   const matchedPeerId = matchedUsers
-    ? matchedUsers.find((userId) => userId !== currentUserId) ?? matchedUsers[0]
+    ? matchedUsers.find((username) => username !== currentUsername) ?? matchedUsers[0]
     : "";
   const matchedDifficulty = pendingMatchData?.difficulty;
   const matchedTopic = pendingMatchData?.topic.replace(/-/g, " ");

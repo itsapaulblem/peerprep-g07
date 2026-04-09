@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 
 const QUESTION_SERVICE_URL = process.env.QUESTION_SERVICE_URL || 'http://question-service:3001';
+const COLLAB_USER_ROOM_MAP_KEY = 'collab.users.room';
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -97,6 +98,35 @@ async function initializeRoomQuestion(redisClient, roomId, room) {
 function createApiServer(redisClient) {
     const app = express();
     app.use(cors());
+    app.use(express.json());
+
+    app.get('/room/by-user/:username', async (req, res) => {
+        const { username } = req.params;
+
+        if (!username) {
+            return res.status(400).json({ error: 'Username is required' });
+        }
+
+        try {
+            const roomId = await redisClient.hGet(COLLAB_USER_ROOM_MAP_KEY, username);
+
+            if (!roomId) {
+                return res.status(404).json({ error: 'User does not belong to this room' });
+            }
+
+            // Suppose there is a roomId , need to check if the room exist or not 
+            // if not it will send value roomId and toggle to collab causing a loop
+            const room = await redisClient.hGetAll(`room:${roomId}`);
+            if (!room || Object.keys(room).length === 0) {
+                await redisClient.hDel(COLLAB_USER_ROOM_MAP_KEY, username);
+                return res.status(404).json({ error: 'Room not found' });
+            }
+            return res.json({ roomId });
+        } catch (err) {
+            console.error('Failed to resolve room by user:', err);
+            return res.status(500).json({ error: 'Internal server error' });
+        }
+    });
 
     app.get('/room/:roomId', async (req, res) => {
         const { roomId } = req.params;
@@ -156,12 +186,28 @@ function createApiServer(redisClient) {
                 programmingLanguage: room.programmingLanguage,
                 questionTopic: room.questionTopic,
                 questionDifficulty: room.questionDifficulty,
-                participantUserIds,
+                participantUsernames: participantUserIds,
                 imageUrls,
                 chatLog
             });
         } catch (err) {
             console.error('Failed to fetch room from redis:', err);
+            return res.status(500).json({ error: 'Internal server error' });
+        }
+    });
+
+    app.delete('/room/:roomId/user/:username/mapping', async (req, res) => {
+        const { roomId, username } = req.params;
+
+        if (!roomId || !username) {
+            return res.status(400).json({ error: 'Room ID and Username are required' });
+        }
+
+        try {
+            await redisClient.hDel(COLLAB_USER_ROOM_MAP_KEY, username);
+            return res.status(200).json({ message: 'User-room mapping deleted' });
+        } catch (err) {
+            console.error('Failed to delete user-room mapping:', err);
             return res.status(500).json({ error: 'Internal server error' });
         }
     });

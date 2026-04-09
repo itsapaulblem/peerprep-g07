@@ -4,6 +4,7 @@ import { collabRedis } from "../redis/collabRedisClient";
 import { redis } from "../redis/redisClient";
 import {
   ACTIVE_QUEUES_KEY,
+  COLLAB_USER_ROOM_MAP_KEY,
   PENDING_MATCHES_KEY,
   QUEUED_USERS_KEY,
   USER_PENDING_MATCH_KEY,
@@ -468,11 +469,21 @@ async function createRoomForAcceptedMatch(
 ): Promise<Match> {
   const roomId = randomUUID();
 
+  // initialUserIds is for tracking which users were part of the match at the time of room creation
+  // participantUserIds is for tracking the current users in the room 
+  // both uses username instead of userId even though it is named userId
   await collabRedis.hset(`room:${roomId}`, {
     programmingLanguage: state.language,
     questionTopic: state.topic,
     questionDifficulty: state.difficulty,
+    initialUserIds: JSON.stringify([state.user1Id, state.user2Id]),
     participantUserIds: JSON.stringify([state.user1Id, state.user2Id]),
+  });
+
+  // username : roomId mapping
+  await collabRedis.hset(COLLAB_USER_ROOM_MAP_KEY, {
+    [state.user1Id]: roomId,
+    [state.user2Id]: roomId,
   });
 
   return {
