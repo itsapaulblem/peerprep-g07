@@ -20,6 +20,12 @@ export interface UserProfile {
   profile_image_url: string;
 }
 
+export interface UserProfileResponse {
+  users: UserProfile[];
+  totalPages: number;
+  currentPage: number;
+}
+
 export interface UserProfileUpdateData {
   username?: string;
   profile_image?: File;
@@ -97,8 +103,10 @@ export async function deleteAccount() {
   return response.data;
 }
 
-export async function getAllUsers(): Promise<UserProfile[]> {
-  const response = await apiClient.get('/users/all');
+export async function getAllUsers(query: string, page: number, limit: number): Promise<UserProfileResponse> {
+  const response = await apiClient.get('/users/all', {
+    params: { query, page, limit }
+  });
   return response.data;
 }
 

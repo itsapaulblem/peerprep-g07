@@ -14,21 +14,24 @@ import {
 import { useState, useEffect } from "react";
 import { getAllUsers, updateUserRole, type UserProfile } from "@/app/services/authService";
 import { extractApiErrorMessage } from "@/app/utils/apiError";
+import { toast } from "sonner";
 
 export function AdminPanel() {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
-  const [actionMessage, setActionMessage] = useState("");
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
   const [confirmAction, setConfirmAction] = useState<{ email: string; newRole: string; username: string } | null>(null);
 
   const fetchUsers = async () => {
     setIsLoading(true);
     setError("");
     try {
-      const data = await getAllUsers();
-      setUsers(data);
+      const data = await getAllUsers(searchQuery, page, 10);
+      setUsers(data.users);
+      setTotalPages(data.totalPages);
     } catch (err: unknown) {
       setError(extractApiErrorMessage(err, "Failed to load users. You may not have root admin access."));
     } finally {
@@ -36,29 +39,46 @@ export function AdminPanel() {
     }
   };
 
-  useEffect(() => {
-    fetchUsers();
-  }, []);
-
   const handleRoleChange = async (email: string, newRole: string) => {
-    setActionMessage("");
     try {
       await updateUserRole(email, newRole);
-      setActionMessage(`Successfully updated role for ${email} to ${newRole}`);
-      setConfirmAction(null);
+      toast.success(`Successfully updated role for ${email} to ${newRole}`);
       fetchUsers();
     } catch (err: unknown) {
-      setActionMessage(extractApiErrorMessage(err, "Failed to update role"));
+      toast.error(extractApiErrorMessage(err, "Failed to update role"));
     }
   };
 
-  const filteredUsers = searchQuery
-    ? users.filter(
-        (u) =>
-          u.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          u.email.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : users;
+  const handleQueryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchQuery(e.target.value);
+    setPage(1); // Reset to first page on new search
+  }
+
+  const useDebounce = (value: string, delay: number) => {
+    const [debouncedValue, setDebouncedValue] = useState(value);
+
+    useEffect(() => {
+      const handler = setTimeout(() => {
+        setDebouncedValue(value);
+      }, delay);
+
+      return () => {
+        clearTimeout(handler);
+      };
+    }, [value, delay]);
+
+    return debouncedValue;
+  };
+
+  const debouncedSearchQuery = useDebounce(searchQuery, 500);
+
+  useEffect(() => {
+    fetchUsers();
+  }, [debouncedSearchQuery, page]);
+
+  const handleInitialAction = (email: string, newRole: string, username: string) => {
+    setConfirmAction({ email, newRole, username });
+  };
 
   const getRoleBadge = (role: string) => {
     switch (role) {
@@ -104,51 +124,12 @@ export function AdminPanel() {
                 placeholder="Search by username or email..."
                 className="pl-10 border-2 border-gray-300"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={handleQueryChange}
               />
             </div>
           </div>
         </div>
       </div>
-
-      {/* Status Message */}
-      {actionMessage && (
-        <div className={`p-4 rounded-lg border-2 ${actionMessage.includes('Successfully') ? 'bg-green-50 border-green-300 text-green-800' : 'bg-red-50 border-red-300 text-red-800'}`}>
-          {actionMessage}
-        </div>
-      )}
-
-      {/* Confirmation Dialog */}
-      {confirmAction && (
-        <div className="p-4 bg-yellow-50 border-2 border-yellow-300 rounded-lg">
-          <div className="flex items-start gap-3">
-            <AlertTriangle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
-            <div className="flex-1">
-              <p className="font-semibold text-yellow-800 mb-1">Confirm Role Change</p>
-              <p className="text-sm text-yellow-700">
-                Change <span className="font-semibold">{confirmAction.username}</span> ({confirmAction.email}) to <span className="font-semibold">{confirmAction.newRole}</span>?
-              </p>
-              <div className="flex gap-2 mt-3">
-                <Button
-                  size="sm"
-                  className="bg-yellow-600 hover:bg-yellow-700 text-white"
-                  onClick={() => handleRoleChange(confirmAction.email, confirmAction.newRole)}
-                >
-                  Confirm
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="border-2 border-gray-300"
-                  onClick={() => setConfirmAction(null)}
-                >
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Users List */}
       {isLoading ? (
@@ -157,7 +138,7 @@ export function AdminPanel() {
         <div className="text-center py-12 text-red-600">{error}</div>
       ) : (
         <div className="space-y-3">
-          {filteredUsers.map((user) => (
+          {users.map((user) => (
             <div
               key={user.id}
               className="border-4 border-gray-300 rounded-lg p-5 bg-white hover:border-gray-400 transition-colors"
@@ -189,30 +170,64 @@ export function AdminPanel() {
                 {/* Role Actions - don't show for root-admin users */}
                 {user.access_role !== "root-admin" && (
                   <div className="flex gap-2 flex-shrink-0">
-                    {user.access_role === "user" && (
+                    {confirmAction?.email === user.email ? (
+                      <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="w-full border-2 border-green-300 bg-green-100 text-green-700 hover:bg-green-300 sm:w-auto"
+                          onClick={() => {
+                            handleRoleChange(confirmAction.email, confirmAction.newRole);
+                            setConfirmAction(null);
+                          }}
+                        >
+                          {confirmAction.newRole === "admin" ? (
+                            <>
+                              <ArrowUpCircle className="mr-1 h-4 w-4" />
+                              Confirm Promotion
+                            </>
+                          ) : (
+                            <>
+                              <ArrowDownCircle className="mr-1 h-4 w-4" />
+                              Confirm Demotion
+                            </>
+                          )}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="w-full border-2 border-red-300 bg-red-100 text-red-700 hover:bg-red-300 sm:w-auto"
+                          onClick={() => setConfirmAction(null)}
+                        >
+                          Cancel Action
+                        </Button>
+                      </div>
+                    ) : (
+                    user.access_role === "user" ? (
                       <Button
                         size="sm"
                         variant="outline"
-                        className="border-2 border-purple-300 text-purple-700 hover:bg-purple-50"
-                        onClick={() => setConfirmAction({ email: user.email, newRole: "admin", username: user.username })}
+                        className="border-2 border-purple-300 text-purple-700 bg-purple-100 hover:bg-purple-300"
+                        onClick={() => handleInitialAction(user.email, "admin", user.username)}
                       >
                         <ArrowUpCircle className="mr-1 h-4 w-4" />
                         Promote to Admin
                       </Button>
-                    )}
-                    {user.access_role === "admin" && (
+                    ): 
+
+                    (user.access_role === "admin" && (
                       <>
                         <Button
                           size="sm"
                           variant="outline"
-                          className="border-2 border-blue-300 text-blue-700 hover:bg-blue-50"
-                          onClick={() => setConfirmAction({ email: user.email, newRole: "user", username: user.username })}
+                          className="border-2 border-blue-300 text-blue-700 bg-blue-100 hover:bg-blue-300"
+                          onClick={() => handleInitialAction(user.email, "user", user.username)}
                         >
                           <ArrowDownCircle className="mr-1 h-4 w-4" />
                           Demote to User
                         </Button>
                       </>
-                    )}
+                    )))}
                   </div>
                 )}
 
@@ -224,9 +239,37 @@ export function AdminPanel() {
               </div>
             </div>
           ))}
-          {filteredUsers.length === 0 && (
+          {users.length === 0 && (
             <div className="text-center py-12 text-gray-500">No users found</div>
           )}
+
+          {/* Pagination Controls */}
+          <div className="flex items-center justify-center gap-4 pt-4">
+            <Button
+              variant="outline"
+              disabled={page === 1}
+              onClick={() => setPage((prev) => Math.max(prev - 1, 1))}
+            >
+              Previous
+            </Button>
+            <span className="text-stone-50">
+              Page <input 
+                type="number"
+                min="1"
+                max={totalPages}
+                value={page}
+                onChange={(e) => setPage(Math.max(1, Math.min(totalPages, parseInt(e.target.value) || 1)))}
+                className="w-16 border rounded text-center"
+              /> of {totalPages}
+            </span>
+            <Button
+              variant="outline"
+              disabled={page === totalPages}
+              onClick={() => setPage((prev) => Math.min(prev + 1, totalPages))}
+            >
+              Next
+            </Button>
+          </div>
         </div>
       )}
     </div>

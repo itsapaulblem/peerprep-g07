@@ -79,10 +79,19 @@ export async function updateUserRoleByEmail(email, role) {
   return result.rows[0];
 }
 
-export async function getAllUsers() {
+export async function getAllUsers(queryStr = "", page, limit) {
+  const offset = (page - 1) * limit;
   const result = await query(
-    "SELECT id, email, username, access_role, created_at, profile_image_url FROM users ORDER BY created_at DESC",
-    [],
+    "SELECT id, email, username, access_role, created_at, profile_image_url FROM users WHERE email ILIKE $1 OR username ILIKE $1 ORDER BY id ASC LIMIT $2 OFFSET $3",
+    [`%${queryStr}%`, limit, offset],
   );
   return result.rows;
+}
+
+export async function getTotalUsersCount(queryStr = "") {
+  const result = await query(
+    "SELECT COUNT(*) FROM users WHERE email ILIKE $1 OR username ILIKE $1",
+    [`%${queryStr}%`],
+  );
+  return parseInt(result.rows[0].count, 10);
 }
