@@ -8,6 +8,7 @@ import { getProfile, updateProfile, changePassword, deleteAccount } from "@/app/
 import { getMyAttemptHistory, type AttemptHistoryEntry } from "@/app/services/attemptHistoryService";
 import { AttemptHistoryPanel } from "@/app/components/AttemptHistoryPanel";
 import { extractApiErrorMessage } from "../utils/apiError";
+import { toast } from "sonner";
 
 const formatTimestamp = (timestamp: string) => {
   try {
@@ -96,6 +97,7 @@ export function UserProfileScreen() {
     try {
       await changePassword(currentPassword, newPassword);
       setPasswordMessage("Password changed successfully!");
+      toast.success("Password changed successfully!");
       setIsChangingPassword(false);
       setCurrentPassword("");
       setNewPassword("");
