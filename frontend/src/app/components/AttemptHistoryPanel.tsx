@@ -65,7 +65,7 @@ export function AttemptHistoryPanel({
         <div className="text-sm text-gray-500">{emptyMessage}</div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 lg:items-start">
-          <ScrollArea className="h-[22rem] lg:h-[34rem] lg:col-span-2 pr-3">
+          <ScrollArea className="h-[22rem] min-w-0 lg:h-[34rem] lg:col-span-2 pr-3">
             <div className="space-y-2">
               {attempts.map((attempt) => {
                 const isSelected = attempt.attemptId === selectedAttemptId;
@@ -83,19 +83,19 @@ export function AttemptHistoryPanel({
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0 flex-1 space-y-2">
-                      <div className="font-medium text-sm text-gray-900 truncate">
-                        {attempt.question.title}
-                      </div>
-                      <div className="text-xs text-gray-600">
-                        {formatTimestamp(attempt.submittedAt)}
-                      </div>
-                      <div className="flex gap-2 flex-wrap">
-                        <Badge variant="secondary" className="border border-blue-300 bg-blue-50 text-blue-700">
-                          Attempt #{attempt.attemptNumber}
-                        </Badge>
-                        <Badge className="bg-green-100 text-green-800 border border-green-300">
-                          {attempt.question.difficulty}
-                        </Badge>
+                        <div className="font-medium text-sm leading-snug text-gray-900 break-words whitespace-normal">
+                          {attempt.question.title}
+                        </div>
+                        <div className="text-xs text-gray-600 break-words">
+                          {formatTimestamp(attempt.submittedAt)}
+                        </div>
+                        <div className="flex gap-2 flex-wrap">
+                          <Badge variant="secondary" className="border border-blue-300 bg-blue-50 text-blue-700">
+                            Attempt #{attempt.attemptNumber}
+                          </Badge>
+                          <Badge className="bg-green-100 text-green-800 border border-green-300">
+                            {attempt.question.difficulty}
+                          </Badge>
                           {attempt.question.archived && (
                             <Badge
                               variant="outline"
@@ -118,18 +118,18 @@ export function AttemptHistoryPanel({
             </div>
           </ScrollArea>
 
-          <div className="lg:col-span-3 border-2 border-gray-300 rounded-lg bg-gray-50">
+          <div className="min-w-0 lg:col-span-3 border-2 border-gray-300 rounded-lg bg-gray-50">
             <ScrollArea className="h-[26rem] lg:h-[34rem]">
-              <div className="p-4 space-y-4">
+              <div className="min-w-0 p-4 space-y-4">
                 {selectedAttempt ? (
                   <>
                     <div className="space-y-2">
                       <div className="flex items-center justify-between gap-3 flex-wrap">
                         <div className="space-y-1 min-w-0">
-                          <h4 className="text-lg font-semibold text-gray-900">
+                          <h4 className="text-lg font-semibold leading-snug text-gray-900 break-words whitespace-normal">
                             {selectedAttempt.question.title}
                           </h4>
-                          <div className="text-xs text-gray-600">
+                          <div className="text-xs text-gray-600 break-words">
                             Attempt #{selectedAttempt.attemptNumber} saved on {formatTimestamp(selectedAttempt.submittedAt)}
                           </div>
                         </div>
@@ -168,7 +168,7 @@ export function AttemptHistoryPanel({
                       <div className="text-xs font-semibold uppercase tracking-wide text-gray-600">
                         Question Description
                       </div>
-                      <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                      <p className="text-sm text-gray-700 whitespace-pre-wrap break-words">
                         {selectedAttempt.question.description}
                       </p>
                     </div>
@@ -180,7 +180,7 @@ export function AttemptHistoryPanel({
                           Submitted Code
                         </div>
                       </div>
-                      <pre className="text-xs text-gray-700 whitespace-pre-wrap break-words font-mono">
+                      <pre className="max-w-full overflow-x-auto text-xs text-gray-700 whitespace-pre-wrap break-words font-mono">
                         {selectedAttempt.submittedCode || "// No code submitted"}
                       </pre>
                     </div>
