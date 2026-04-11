@@ -8,6 +8,7 @@ import {
   deleteUserByEmail as _deleteUserByEmail,
   updateUserRoleByEmail as _updateUserRoleByEmail,
   getAllUsers as _getAllUsers,
+  getTotalUsersCount as _getTotalUsersCount,
 } from "../database/query.js";
 import bcrypt from 'bcrypt';
 import jwt from "jsonwebtoken";
@@ -295,8 +296,26 @@ export async function updateUserRoleByEmail(req, res) {
 
 export async function getAllUsers(req, res) {
   try {
-    const users = await _getAllUsers();
-    return res.status(200).json(users.map(mapUserToView));
+    const { query = "", page = "1", limit = "10" } = req.query;
+
+    const parsedPage = parseInt(page);
+    const parsedLimit = parseInt(limit);
+
+    if (isNaN(parsedPage) || parsedPage < 1) {
+      return res.status(400).json({ error: "Invalid page number" });
+    }
+    if (isNaN(parsedLimit) || parsedLimit < 1) {
+      return res.status(400).json({ error: "Invalid limit value" });
+    }
+
+    const users = await _getAllUsers(query, parsedPage, parsedLimit);
+    const totalUsers = await _getTotalUsersCount(query);
+    const totalPages = Math.ceil(totalUsers / parsedLimit);
+    return res.status(200).json({
+      users: users.map(mapUserToView),
+      totalPages,
+      currentPage: page,
+    });
   } catch (error) {
     console.error('Error retrieving users:', error);
     return res.status(500).json({ error: 'Failed to retrieve users' });

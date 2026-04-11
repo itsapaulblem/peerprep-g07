@@ -32,24 +32,6 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use((req, res, next) => {
-  console.log(`${req.method} ${req.path}`);
-  if (req.body && Object.keys(req.body).length > 0) {
-    console.log('Body:', req.body);
-  }
-  if (req.query && Object.keys(req.query).length > 0) {
-    console.log('Query:', req.query);
-  }
-  if (req.params && Object.keys(req.params).length > 0) {
-    console.log('Params:', req.params);
-  }
-  if (req.headers) {
-    console.log('Headers:', req.headers);
-  }
-
-  next();
-});
-
 app.use('/users', userRoutes);
 app.use('/auth', authRoutes);
 

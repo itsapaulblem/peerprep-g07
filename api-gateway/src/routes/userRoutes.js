@@ -80,6 +80,7 @@ router.get('/all', verifyToken, async (req, res) => {
   try {
     const response = await axios.get(`${USER_SERVICE_URL}/users/all`, {
       headers: { Authorization: `Bearer ${req.token}` },
+      params: req.query,
     });
     return res.status(response.status).json(response.data);
   } catch (error) {
