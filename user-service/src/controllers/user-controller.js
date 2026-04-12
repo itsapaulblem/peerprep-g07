@@ -205,6 +205,12 @@ export async function updateUserPassword(req, res) {
         .json({ error: "Current password and new password are required" });
     }
 
+    if (new_password === current_password) {
+      return res
+        .status(400)
+        .json({ error: "New password cannot be the same as current password" });
+    }
+
     const user = await _getUserByEmail(email);
     if (!user) {
       return res.status(404).json({ error: "User not found" });
