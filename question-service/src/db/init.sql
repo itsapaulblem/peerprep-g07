@@ -43,19 +43,9 @@ INSERT INTO scheduler_state (key, value)
 VALUES ('leetcode_skip', '0')
 ON CONFLICT (key) DO NOTHING;
 
--- Auto-update updated_at on row update
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = NOW();
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE OR REPLACE TRIGGER update_questions_updated_at
-    BEFORE UPDATE ON questions
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
+-- Note: Do NOT use an auto-update trigger for updated_at
+-- Since we're using updated_at for optimistic concurrency control,
+-- we manually manage it in the application layer to prevent version conflicts
 
 -- Seed with 20 sample questions
 INSERT INTO questions (title, description, constraints, test_cases, leetcode_link, difficulty, topics)

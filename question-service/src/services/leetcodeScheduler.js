@@ -5,6 +5,10 @@ import {
   findDuplicateQuestion,
   isQuestionUniqueViolation,
 } from './questionIdentityService.js';
+import {
+  buildQuestionVersionMatchExpression,
+  getQuestionVersionTimestampMs,
+} from './questionVersionService.js';
 
 // ── Config ────────────────────────────────────────────────────
 // AI-generated (edited by Jasmine)
@@ -496,7 +500,13 @@ const insertQuestion = async (payload) => {
   return result.rows[0];
 };
 
-const updateQuestionDetails = async (questionId, payload) => {
+const updateQuestionDetails = async (questionId, payload, expectedUpdatedAt) => {
+  const expectedUpdatedAtMs = getQuestionVersionTimestampMs(expectedUpdatedAt);
+
+  if (!Number.isInteger(expectedUpdatedAtMs)) {
+    return null;
+  }
+
   const result = await pool.query(
     `UPDATE questions
         SET title = $1,
@@ -505,8 +515,10 @@ const updateQuestionDetails = async (questionId, payload) => {
             test_cases = $4,
             leetcode_link = $5,
             difficulty = $6,
-            topics = $7
+            topics = $7,
+            updated_at = NOW()
       WHERE question_id = $8
+        AND ${buildQuestionVersionMatchExpression('updated_at', '$9')}
       RETURNING question_id, title`,
     [
       payload.title,
@@ -517,10 +529,11 @@ const updateQuestionDetails = async (questionId, payload) => {
       payload.difficulty,
       payload.topics,
       questionId,
+      expectedUpdatedAtMs,
     ]
   );
 
-  return result.rows[0];
+  return result.rows[0] || null;
 };
 
 // ── Main sync job ─────────────────────────────────────────────
@@ -618,7 +631,20 @@ const runSync = async () => {
 
         try {
           if (existingQuestion) {
-            const updated = await updateQuestionDetails(existingQuestion.question_id, payload);
+            const updated = await updateQuestionDetails(
+              existingQuestion.question_id,
+              payload,
+              existingQuestion.updated_at
+            );
+
+            if (!updated) {
+              tracker.skipped++;
+              tracker.log('skipped', payload.title, '(question changed during sync)');
+              totalProcessed++;
+              await sleep(CONFIG.delayBetweenQuestions);
+              continue;
+            }
+
             tracker.updated++;
             tracker.log('updated', payload.title, `(ID: ${updated.question_id})`);
           } else {

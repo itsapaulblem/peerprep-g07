@@ -54,7 +54,7 @@ const findDuplicateByLink = async (normalizedLink, excludeQuestionId) => {
   }
 
   const result = await pool.query(
-    `SELECT question_id, title, leetcode_link, description, test_cases
+    `SELECT question_id, title, leetcode_link, description, test_cases, updated_at
        FROM questions
       WHERE ${NORMALIZED_LINK_SQL} = $1
         ${excludeClause}
@@ -79,7 +79,7 @@ const findDuplicateByTitle = async (normalizedTitle, excludeQuestionId) => {
   }
 
   const result = await pool.query(
-    `SELECT question_id, title, leetcode_link, description, test_cases
+    `SELECT question_id, title, leetcode_link, description, test_cases, updated_at
        FROM questions
       WHERE ${NORMALIZED_TITLE_SQL} = $1
         ${excludeClause}

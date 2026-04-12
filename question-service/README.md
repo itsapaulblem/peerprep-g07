@@ -4,6 +4,56 @@ The Question Service is a REST API that manages the storage, retrieval, administ
 
 ---
 
+## Optimistic Concurrency Control
+
+The Question Service implements **optimistic locking** to prevent concurrent edits of questions by multiple users. This ensures data consistency when multiple administrators edit the same question simultaneously.
+
+### How It Works
+
+- Each question has an `updated_at` timestamp that serves as a version identifier
+- Write operations (UPDATE, DELETE, image uploads/deletes) require a version header
+- If another user modified the question since you loaded it, the operation is rejected
+- The frontend automatically reloads the latest version and shows a conflict message
+
+### Version Header
+
+All write operations require the `x-question-version` header containing the question's `updated_at` timestamp:
+
+```
+x-question-version: 2026-04-12T09:29:29.753Z
+```
+
+### Conflict Resolution
+
+When a version conflict occurs:
+
+**Response 409**
+```json
+{
+  "error": "Conflict",
+  "code": "QUESTION_VERSION_CONFLICT",
+  "message": "This question was updated by someone else. Latest version has been returned.",
+  "currentQuestion": { /* latest question data */ },
+  "currentUpdatedAt": "2026-04-12T09:30:15.123Z"
+}
+```
+
+**Response 428** (missing version header)
+```json
+{
+  "error": "Precondition Required",
+  "code": "QUESTION_VERSION_REQUIRED",
+  "message": "A valid x-question-version header is required for this operation."
+}
+```
+
+The frontend handles conflicts by:
+1. Displaying a warning message
+2. Reloading the form with the latest question data
+3. Allowing the user to reapply their changes and save again
+
+---
+
 ## Tech Stack
 
 - **Runtime**: Node.js 20 (Express)
@@ -175,6 +225,8 @@ CREATE TABLE questions (
 );
 ```
 
+**Note:** Unlike typical schemas, `updated_at` is **not** automatically updated via a database trigger. Instead, it's manually set to `NOW()` during write operations to support optimistic concurrency control. This prevents version conflicts during concurrent edits.
+
 ```sql
 CREATE UNIQUE INDEX questions_unique_normalized_leetcode_link
 ON questions (
@@ -204,7 +256,7 @@ CREATE TABLE scheduler_state (
 - `test_cases` is stored as **JSONB** so Postgres understands the structure, validates it, and allows future querying inside the field.
 - `leetcode_link` is required, and duplicates are blocked by normalized LeetCode link and normalized title.
 - `image_urls` stores only URLs. Actual images are hosted on a third-party service.
-- `updated_at` is automatically updated via a Postgres trigger on every row update.
+- `updated_at` serves as a version identifier for optimistic concurrency control and is manually updated during write operations.
 - `scheduler_state` stores the persistent LeetCode pagination offset for the scheduler.
 
 ### Test Case Format
@@ -458,6 +510,11 @@ GET /questions/random?topic=Algorithms&difficulty=Hard
 
 **Content-Type:** `multipart/form-data`
 
+**Headers:**
+```
+x-question-version: <question.updatedAt timestamp>
+```
+
 Send only the fields you want to update. All fields are optional — unset fields keep their existing values. If `leetcodeLink` is omitted, the existing link is kept; the final stored value must still be non-blank.
 
 | Field | Type | Description |
@@ -483,6 +540,31 @@ Send only the fields you want to update. All fields are optional — unset field
 
 **Response 200** — updated question object.
 
+**Response 409** — version conflict (another user modified the question):
+```json
+{
+  "error": "Conflict",
+  "code": "QUESTION_VERSION_CONFLICT",
+  "message": "This question was updated by someone else. Latest version has been returned.",
+  "currentQuestion": {
+    "questionId": 1,
+    "title": "Updated Title",
+    "description": "Updated description...",
+    "updatedAt": "2026-04-12T09:30:15.123Z"
+  },
+  "currentUpdatedAt": "2026-04-12T09:30:15.123Z"
+}
+```
+
+**Response 428** — missing version header:
+```json
+{
+  "error": "Precondition Required",
+  "code": "QUESTION_VERSION_REQUIRED",
+  "message": "A valid x-question-version header is required for this operation."
+}
+```
+
 **Response 409** — duplicate normalized title or LeetCode link. The response shape matches the create duplicate response.
 
 ---
@@ -493,11 +575,137 @@ Send only the fields you want to update. All fields are optional — unset field
 |--------|------|------|
 | DELETE | `/questions/:id` | `Authorization: Bearer <token>` |
 
+**Headers:**
+```
+x-question-version: <question.updatedAt timestamp>
+```
+
 Deletes the question from the database **and** removes all associated images from S3.
 
 **Response 200**
 ```json
 { "message": "Question \"Reverse a String\" (ID: 1) deleted successfully." }
+```
+
+**Response 409** — version conflict:
+```json
+{
+  "error": "Conflict",
+  "code": "QUESTION_VERSION_CONFLICT",
+  "message": "This question was updated by someone else. Latest version has been returned.",
+  "currentQuestion": { /* latest question data */ },
+  "currentUpdatedAt": "2026-04-12T09:30:15.123Z"
+}
+```
+
+**Response 428** — missing version header:
+```json
+{
+  "error": "Precondition Required",
+  "code": "QUESTION_VERSION_REQUIRED",
+  "message": "A valid x-question-version header is required for this operation."
+}
+```
+
+---
+
+## Image Operations *(Admin only)*
+
+### Upload Images to Question
+
+| Method | Path | Auth |
+|--------|------|------|
+| POST | `/questions/:id/images` | `Authorization: Bearer <token>` |
+
+**Content-Type:** `multipart/form-data`
+
+**Headers:**
+```
+x-question-version: <question.updatedAt timestamp>
+```
+
+**Request Body**
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `images` | file(s) | Yes | Image files (jpeg, png, gif, webp — max 5MB each, max 10 files) |
+
+**Response 200**
+```json
+{
+  "message": "2 image(s) uploaded successfully.",
+  "uploadedUrls": ["https://s3.../image1.png", "https://s3.../image2.png"],
+  "imageUrls": ["https://s3.../existing.png", "https://s3.../image1.png", "https://s3.../image2.png"],
+  "updatedAt": "2026-04-12T09:30:15.123Z"
+}
+```
+
+**Response 409** — version conflict:
+```json
+{
+  "error": "Conflict",
+  "code": "QUESTION_VERSION_CONFLICT",
+  "message": "This question was updated by someone else. Latest version has been returned.",
+  "currentQuestion": { /* latest question data */ },
+  "currentUpdatedAt": "2026-04-12T09:30:15.123Z"
+}
+```
+
+**Response 428** — missing version header:
+```json
+{
+  "error": "Precondition Required",
+  "code": "QUESTION_VERSION_REQUIRED",
+  "message": "A valid x-question-version header is required for this operation."
+}
+```
+
+### Delete Image from Question
+
+| Method | Path | Auth |
+|--------|------|------|
+| DELETE | `/questions/:id/images` | `Authorization: Bearer <token>` |
+
+**Content-Type:** `application/json`
+
+**Headers:**
+```
+x-question-version: <question.updatedAt timestamp>
+```
+
+**Request Body**
+```json
+{
+  "imageUrl": "https://s3.../image-to-delete.png"
+}
+```
+
+**Response 200**
+```json
+{
+  "message": "Image deleted successfully.",
+  "imageUrls": ["https://s3.../remaining-image.png"],
+  "updatedAt": "2026-04-12T09:30:15.123Z"
+}
+```
+
+**Response 409** — version conflict:
+```json
+{
+  "error": "Conflict",
+  "code": "QUESTION_VERSION_CONFLICT",
+  "message": "This question was updated by someone else. Latest version has been returned.",
+  "currentQuestion": { /* latest question data */ },
+  "currentUpdatedAt": "2026-04-12T09:30:15.123Z"
+}
+```
+
+**Response 428** — missing version header:
+```json
+{
+  "error": "Precondition Required",
+  "code": "QUESTION_VERSION_REQUIRED",
+  "message": "A valid x-question-version header is required for this operation."
+}
 ```
 
 ---
@@ -596,35 +804,42 @@ curl -X POST http://localhost:3001/questions \
 # Update a question — text fields only
 curl -X PUT http://localhost:3001/questions/1 \
   -H "Authorization: Bearer " \
+  -H "x-question-version: 2026-04-12T09:29:29.753Z" \
   -F "difficulty=Medium"
 
 # Update a question — remove an image (send only URLs you want to keep)
 curl -X PUT http://localhost:3001/questions/1 \
   -H "Authorization: Bearer " \
+  -H "x-question-version: 2026-04-12T09:29:29.753Z" \
   -F 'existingImageUrls=["https://s3.../image1.png"]'
 
 # Update a question — remove all images
 curl -X PUT http://localhost:3001/questions/1 \
   -H "Authorization: Bearer " \
+  -H "x-question-version: 2026-04-12T09:29:29.753Z" \
   -F "existingImageUrls=[]"
 
 # Update a question — add a new image
 curl -X PUT http://localhost:3001/questions/1 \
   -H "Authorization: Bearer " \
+  -H "x-question-version: 2026-04-12T09:29:29.753Z" \
   -F "images=@/path/to/newimage.png"
 
 # Delete a question (also deletes all S3 images)
 curl -X DELETE http://localhost:3001/questions/1 \
-  -H "Authorization: Bearer "
+  -H "Authorization: Bearer " \
+  -H "x-question-version: 2026-04-12T09:29:29.753Z"
 
 # Upload images to an existing question
 curl -X POST http://localhost:3001/questions/1/images \
   -H "Authorization: Bearer " \
+  -H "x-question-version: 2026-04-12T09:29:29.753Z" \
   -F "images=@/path/to/image.png"
 
 # Delete a specific image from a question
 curl -X DELETE http://localhost:3001/questions/1/images \
   -H "Authorization: Bearer " \
+  -H "x-question-version: 2026-04-12T09:29:29.753Z" \
   -H "Content-Type: application/json" \
   -d '{"imageUrl": "https://s3.../questions/uuid.png"}'
 ```
@@ -664,3 +879,4 @@ The database is pre-loaded with 20 sample questions on first run:
 
 - Add `.env` to your `.gitignore` - never commit it to version control.
 - Images are stored externally; only the URL is stored in the database.
+- **Optimistic concurrency control** prevents conflicting edits by multiple administrators. All write operations require version headers and will fail if the question was modified by someone else.

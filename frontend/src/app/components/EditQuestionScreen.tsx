@@ -16,6 +16,8 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import {
+  getQuestionById,
+  getQuestionVersionConflictData,
   getQuestionRequestErrorMessage,
   getTopics,
   updateQuestion,
@@ -56,7 +58,10 @@ export function EditQuestionScreen({ question, onBack, onSave }: EditQuestionScr
   const [selectedImages, setSelectedImages] = useState<File[]>([]);
   const [imageError, setImageError] = useState("");
   const [error, setError] = useState("");
+  const [conflictMessage, setConflictMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingLatestQuestion, setIsLoadingLatestQuestion] = useState(true);
+  const [questionVersion, setQuestionVersion] = useState(question.updatedAt);
   const [testCases, setTestCases] = useState(
     question.testCases && question.testCases.length > 0
       ? question.testCases.map((tc) => ({ input: tc.input, expectedOutput: tc.output }))
@@ -68,6 +73,32 @@ export function EditQuestionScreen({ question, onBack, onSave }: EditQuestionScr
   const selectableTopics = Array.from(new Set([...availableTopics, ...selectedTopics]));
   const totalImageCount = existingImageUrls.length + selectedImages.length;
   const canAddMoreImages = totalImageCount < MAX_QUESTION_IMAGES;
+
+  const applyQuestionToForm = (nextQuestion: Question) => {
+    setTitle(nextQuestion.title);
+    setDescription(nextQuestion.description);
+    setDifficulty(nextQuestion.difficulty);
+    setSelectedTopics(nextQuestion.topics.length > 0 ? [...nextQuestion.topics] : []);
+    setAvailableTopics((currentTopics) =>
+      Array.from(new Set([...currentTopics, ...nextQuestion.topics]))
+    );
+    setLeetcodeLink(nextQuestion.leetcodeLink || "");
+    setExistingImageUrls(nextQuestion.imageUrls || []);
+    setSelectedImages([]);
+    setImageError("");
+    setQuestionVersion(nextQuestion.updatedAt);
+    setTestCases(
+      nextQuestion.testCases && nextQuestion.testCases.length > 0
+        ? nextQuestion.testCases.map((tc) => ({ input: tc.input, expectedOutput: tc.output }))
+        : [{ input: "", expectedOutput: "" }]
+    );
+  };
+
+  useEffect(() => {
+    applyQuestionToForm(question);
+    setConflictMessage("");
+    setError("");
+  }, [question.questionId]);
 
   useEffect(() => {
     let isMounted = true;
@@ -98,6 +129,35 @@ export function EditQuestionScreen({ question, onBack, onSave }: EditQuestionScr
       isMounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadLatestQuestion = async () => {
+      setIsLoadingLatestQuestion(true);
+
+      try {
+        const response = await getQuestionById(question.questionId);
+        if (isMounted) {
+          applyQuestionToForm(response.question);
+        }
+      } catch (err: unknown) {
+        if (isMounted) {
+          setError(getQuestionRequestErrorMessage(err, "Failed to load the latest question"));
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingLatestQuestion(false);
+        }
+      }
+    };
+
+    loadLatestQuestion();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [question.questionId]);
 
   const handleAddTestCase = () => {
     setTestCases([...testCases, { input: "", expectedOutput: "" }]);
@@ -169,6 +229,7 @@ export function EditQuestionScreen({ question, onBack, onSave }: EditQuestionScr
 
   const handleSave = async () => {
     setError("");
+    setConflictMessage("");
     if (!title || !description) {
       setError("Title and description are required");
       return;
@@ -197,10 +258,20 @@ export function EditQuestionScreen({ question, onBack, onSave }: EditQuestionScr
         leetcodeLink: leetcodeLink.trim(),
         existingImageUrls,
         imageFiles: selectedImages.length > 0 ? selectedImages : undefined,
-      });
+      }, questionVersion);
       if (onSave) onSave();
       onBack();
     } catch (err: unknown) {
+      const conflictData = getQuestionVersionConflictData(err);
+      if (conflictData?.currentQuestion) {
+        applyQuestionToForm(conflictData.currentQuestion);
+        setConflictMessage(
+          `${conflictData.message} The editor has been reloaded with the latest question. Reapply your changes and save again.`
+        );
+        setError("");
+        return;
+      }
+
       setError(getQuestionRequestErrorMessage(err, "Failed to update question"));
     } finally {
       setIsLoading(false);
@@ -239,6 +310,12 @@ export function EditQuestionScreen({ question, onBack, onSave }: EditQuestionScr
           </Button>
         </div>
       </div>
+
+      {isLoadingLatestQuestion && (
+        <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+          Loading the latest question version...
+        </div>
+      )}
 
       {/* Main Form */}
       <div className="border-4 border-gray-300 rounded-lg p-6 bg-white">
@@ -543,6 +620,11 @@ export function EditQuestionScreen({ question, onBack, onSave }: EditQuestionScr
       </div>
 
       {/* Action Buttons */}
+      {conflictMessage && (
+        <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+          {conflictMessage}
+        </div>
+      )}
       {error && (
         <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
           {error}
@@ -559,11 +641,11 @@ export function EditQuestionScreen({ question, onBack, onSave }: EditQuestionScr
         </Button>
         <Button
           onClick={handleSave}
-          disabled={isLoading}
+          disabled={isLoading || isLoadingLatestQuestion}
           className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white px-6"
         >
           <Save className="mr-2 h-4 w-4" />
-          {isLoading ? "Saving..." : "Update Question"}
+          {isLoadingLatestQuestion ? "Loading..." : isLoading ? "Saving..." : "Update Question"}
         </Button>
       </div>
     </div>

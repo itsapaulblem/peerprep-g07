@@ -24,7 +24,7 @@ import {
   Trash2,
   User,
 } from "lucide-react";
-import { deleteQuestion, getQuestions, getTopics, type Question } from "@/app/services/questionService";
+import { deleteQuestion, getQuestions, getQuestionVersionConflictData, getTopics, type Question } from "@/app/services/questionService";
 import { extractApiErrorMessage } from "../utils/apiError";
 
 interface QuestionLibraryProps {
@@ -143,11 +143,18 @@ export function QuestionLibrary({
     fetchQuestions();
   }, [topicFilter, difficultyFilter, deferredSearchQuery, currentPage, pageSize]);
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (question: Question) => {
     try {
-      await deleteQuestion(id);
+      await deleteQuestion(question.questionId, question.updatedAt);
       await fetchQuestions();
     } catch (err: unknown) {
+      const conflictData = getQuestionVersionConflictData(err);
+      if (conflictData) {
+        await fetchQuestions();
+        setError("This question changed before it could be deleted. The library has been refreshed.");
+        return;
+      }
+
       setError(extractApiErrorMessage(err, "Failed to delete question"));
     }
   };
@@ -385,7 +392,7 @@ export function QuestionLibrary({
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => handleDelete(question.questionId)}
+                      onClick={() => handleDelete(question)}
                       className="flex-1 border-2 border-red-300 text-red-700 hover:bg-red-50 hover:border-red-400"
                     >
                       <Trash2 className="mr-1 h-3 w-3" />
@@ -452,7 +459,7 @@ export function QuestionLibrary({
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => handleDelete(question.questionId)}
+                      onClick={() => handleDelete(question)}
                       className="border-2 border-red-300 text-red-700 hover:bg-red-50 hover:border-red-400"
                     >
                       <Trash2 className="mr-1 h-4 w-4" />

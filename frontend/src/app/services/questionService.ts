@@ -53,6 +53,7 @@ export interface CreateQuestionData {
 
 interface QuestionErrorResponse {
   error?: string;
+  code?: string;
   message?: string;
   duplicateField?: 'title' | 'leetcodeLink' | 'unknown';
   duplicateQuestion?: {
@@ -61,6 +62,14 @@ interface QuestionErrorResponse {
     leetcodeLink?: string | null;
   } | null;
   missingFields?: string[];
+  currentQuestion?: Question | null;
+  currentUpdatedAt?: string | null;
+}
+
+export interface QuestionVersionConflictData {
+  message: string;
+  currentQuestion: Question | null;
+  currentUpdatedAt: string | null;
 }
 
 const getDuplicateQuestionMessage = (responseData: QuestionErrorResponse) => {
@@ -109,6 +118,21 @@ export function getQuestionRequestErrorMessage(error: unknown, fallbackMessage: 
   return responseData.message || responseData.error || fallbackMessage;
 }
 
+export function getQuestionVersionConflictData(error: unknown): QuestionVersionConflictData | null {
+  const responseData = (error as AxiosError<QuestionErrorResponse>)?.response?.data;
+
+  if (!responseData || responseData.code !== 'QUESTION_VERSION_CONFLICT') {
+    return null;
+  }
+
+  return {
+    message: responseData.message || 'This question changed while you were editing it.',
+    currentQuestion: responseData.currentQuestion || null,
+    currentUpdatedAt:
+      responseData.currentUpdatedAt || responseData.currentQuestion?.updatedAt || null,
+  };
+}
+
 function buildQuestionFormData(data: Partial<CreateQuestionData>) {
   const formData = new FormData();
 
@@ -128,6 +152,18 @@ function buildQuestionFormData(data: Partial<CreateQuestionData>) {
   });
 
   return formData;
+}
+
+function buildQuestionWriteConfig(questionVersion?: string) {
+  if (!questionVersion) {
+    return undefined;
+  }
+
+  return {
+    headers: {
+      'x-question-version': questionVersion,
+    },
+  };
 }
 
 export async function getQuestions(filters?: QuestionFilters): Promise<QuestionsResponse> {
@@ -166,12 +202,21 @@ export async function createQuestion(data: CreateQuestionData) {
   return response.data;
 }
 
-export async function updateQuestion(id: number, data: Partial<CreateQuestionData>) {
-  const response = await apiClient.put(`/questions/${id}`, buildQuestionFormData(data));
+export async function updateQuestion(
+  id: number,
+  data: Partial<CreateQuestionData>,
+  questionVersion?: string
+) {
+  const config = buildQuestionWriteConfig(questionVersion);
+  const response = await apiClient.put(
+    `/questions/${id}`,
+    buildQuestionFormData(data),
+    config
+  );
   return response.data;
 }
 
-export async function deleteQuestion(id: number) {
-  const response = await apiClient.delete(`/questions/${id}`);
+export async function deleteQuestion(id: number, questionVersion?: string) {
+  const response = await apiClient.delete(`/questions/${id}`, buildQuestionWriteConfig(questionVersion));
   return response.data;
 }

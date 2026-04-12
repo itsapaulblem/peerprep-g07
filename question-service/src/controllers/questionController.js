@@ -6,6 +6,13 @@ import {
   findDuplicateQuestion,
   isQuestionUniqueViolation,
 } from '../services/questionIdentityService.js';
+import {
+  buildQuestionVersionMatchExpression,
+  getExpectedQuestionVersion,
+  matchesQuestionVersion,
+  sendMissingQuestionVersionResponse,
+  sendQuestionVersionConflictResponse,
+} from '../services/questionVersionService.js';
 
 const VALID_DIFFICULTIES = ['Easy', 'Medium', 'Hard'];
 const DEFAULT_QUESTION_PAGE_SIZE = 12;
@@ -48,6 +55,21 @@ const isBlank = (value) => value === undefined || value === null || String(value
 
 const sendDuplicateResponse = (res, duplicate) =>
   res.status(409).json(buildDuplicateResponse(duplicate));
+
+const loadQuestionById = async (questionId) => {
+  const result = await pool.query('SELECT * FROM questions WHERE question_id = $1', [questionId]);
+  return result.rows[0] || null;
+};
+
+const resolveQuestionWriteConflict = async (questionId, res) => {
+  const currentQuestionRow = await loadQuestionById(questionId);
+
+  if (!currentQuestionRow) {
+    return res.status(404).json({ error: 'Not Found', message: `Question with ID ${questionId} not found.` });
+  }
+
+  return sendQuestionVersionConflictResponse(res, currentQuestionRow, formatQuestion);
+};
 
 // ────────────────────────────────────────────────────────────
 // Helper: validate and upload image files to S3
@@ -354,13 +376,13 @@ const getQuestionById = async (req, res) => {
   }
 
   try {
-    const result = await pool.query('SELECT * FROM questions WHERE question_id = $1', [id]);
+    const questionRow = await loadQuestionById(id);
 
-    if (result.rows.length === 0) {
+    if (!questionRow) {
       return res.status(404).json({ error: 'Not Found', message: `Question with ID ${id} not found.` });
     }
 
-    const question = formatQuestion(result.rows[0]);
+    const question = formatQuestion(questionRow);
 
     return res.status(200).json(buildQuestionResponse(question));
   } catch (err) {
@@ -444,13 +466,20 @@ const updateQuestion = async (req, res) => {
   }
 
   try {
-    // Check question exists
-    const existing = await pool.query('SELECT * FROM questions WHERE question_id = $1', [id]);
-    if (existing.rows.length === 0) {
+    const current = await loadQuestionById(id);
+    if (!current) {
       return res.status(404).json({ error: 'Not Found', message: `Question with ID ${id} not found.` });
     }
 
-    const current = existing.rows[0];
+    const expectedQuestionVersion = getExpectedQuestionVersion(req);
+    if (!expectedQuestionVersion) {
+      return sendMissingQuestionVersionResponse(res);
+    }
+
+    if (!matchesQuestionVersion(current.updated_at, expectedQuestionVersion)) {
+      return sendQuestionVersionConflictResponse(res, current, formatQuestion);
+    }
+
     const finalTitle = title ?? current.title;
     const finalDescription = description ?? current.description;
     const finalConstraints = constraints !== undefined ? constraints : current.constraints;
@@ -527,8 +556,10 @@ const updateQuestion = async (req, res) => {
            leetcode_link = $5,
            difficulty    = $6,
            topics        = $7,
-           image_urls    = $8
+           image_urls    = $8,
+           updated_at    = NOW()
          WHERE question_id = $9
+           AND ${buildQuestionVersionMatchExpression('updated_at', '$10')}
          RETURNING *`,
         [
           finalTitle,
@@ -540,8 +571,16 @@ const updateQuestion = async (req, res) => {
           finalTopics,
           finalImageUrls,
           id,
+          expectedQuestionVersion.timestampMs,
         ]
       );
+
+      if (result.rows.length === 0) {
+        if (newlyUploadedUrls.length > 0) {
+          await deleteImages(newlyUploadedUrls).catch(e => console.error('[updateQuestion] new image cleanup failed:', e));
+        }
+        return resolveQuestionWriteConflict(id, res);
+      }
     } catch (err) {
       if (newlyUploadedUrls.length > 0) {
         await deleteImages(newlyUploadedUrls).catch(e => console.error('[updateQuestion] new image cleanup failed:', e));
@@ -589,23 +628,40 @@ const deleteQuestion = async (req, res) => {
   }
 
   try {
-
-    const existing = await pool.query('SELECT * FROM questions WHERE question_id = $1', [id]);
-    if (existing.rows.length === 0) {
+    const current = await loadQuestionById(id);
+    if (!current) {
       return res.status(404).json({ error: 'Not Found', message: `Question with ID ${id} not found.` });
     }
 
-    const { title, image_urls } = existing.rows[0];
-    // Delete all S3 images first
-    if (image_urls && image_urls.length > 0) {
-      await deleteImages(image_urls).catch(e => console.error('[deleteQuestion] S3 cleanup failed:', e));
+    const expectedQuestionVersion = getExpectedQuestionVersion(req);
+    if (!expectedQuestionVersion) {
+      return sendMissingQuestionVersionResponse(res);
     }
- 
-    // Delete the question from DB
-    await pool.query('DELETE FROM questions WHERE question_id = $1', [id]);
+
+    if (!matchesQuestionVersion(current.updated_at, expectedQuestionVersion)) {
+      return sendQuestionVersionConflictResponse(res, current, formatQuestion);
+    }
+
+    const deleteResult = await pool.query(
+      `DELETE FROM questions
+       WHERE question_id = $1
+         AND ${buildQuestionVersionMatchExpression('updated_at', '$2')}
+       RETURNING title, image_urls`,
+      [id, expectedQuestionVersion.timestampMs]
+    );
+
+    if (deleteResult.rows.length === 0) {
+      return resolveQuestionWriteConflict(id, res);
+    }
+
+    const deletedQuestion = deleteResult.rows[0];
+    const deletedImageUrls = Array.isArray(deletedQuestion.image_urls) ? deletedQuestion.image_urls : [];
+    if (deletedImageUrls.length > 0) {
+      await deleteImages(deletedImageUrls).catch(e => console.error('[deleteQuestion] S3 cleanup failed:', e));
+    }
 
     return res.status(200).json({
-      message: `Question "${title}" (ID: ${id}) and ${image_urls.length} image(s) deleted successfully.`,
+      message: `Question "${deletedQuestion.title}" (ID: ${id}) and ${deletedImageUrls.length} image(s) deleted successfully.`,
     });
   } catch (err) {
     console.error('[deleteQuestion]', err);
@@ -621,4 +677,5 @@ export {
   getQuestionById,
   updateQuestion,
   deleteQuestion,
+  formatQuestion,
 };

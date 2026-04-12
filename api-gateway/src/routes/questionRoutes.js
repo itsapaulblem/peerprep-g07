@@ -18,6 +18,14 @@ const proxyQuestionWriteRequest = createProxyMiddleware({
       if (req.token) {
         proxyReq.setHeader('authorization', `Bearer ${req.token}`);
       }
+
+      const questionVersion = req.headers['x-question-version'];
+      if (questionVersion) {
+        proxyReq.setHeader(
+          'x-question-version',
+          Array.isArray(questionVersion) ? questionVersion[0] : questionVersion
+        );
+      }
     },
   },
 });
@@ -95,7 +103,18 @@ router.delete('/:id', verifyToken, verifyAdmin, async (req, res) => {
   try {
     const response = await axios.delete(
       `${QUESTION_SERVICE_URL}/questions/${req.params.id}`,
-      { headers: { authorization: `Bearer ${req.token}` } },
+      {
+        headers: {
+          authorization: `Bearer ${req.token}`,
+          ...(req.headers['x-question-version']
+            ? {
+                'x-question-version': Array.isArray(req.headers['x-question-version'])
+                  ? req.headers['x-question-version'][0]
+                  : req.headers['x-question-version'],
+              }
+            : {}),
+        },
+      },
     );
     return res.status(response.status).json(response.data);
   } catch (error) {
