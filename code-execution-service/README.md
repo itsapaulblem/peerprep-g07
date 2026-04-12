@@ -1,3 +1,10 @@
+<!--
+AI Assistance Disclosure:
+Tool: GitHub Copilot (model: Claude Opus 4.6), date: 2026-04-12
+Scope: Generated initial README content based on existing codebase analysis.
+Author review: Validated correctness against source code, fixed typo, verified all endpoints and config values.
+-->
+
 # Code Execution Service
 
 The Code Execution Service provides sandboxed code execution for PeerPrep's collaborative coding workspace. It acts as a thin proxy between the API Gateway and [Piston](https://github.com/engineer-man/piston), an open-source code execution engine.

@@ -1,3 +1,10 @@
+<!--
+AI Assistance Disclosure:
+Tool: GitHub Copilot (model: Claude Opus 4.6), date: 2026-04-12
+Scope: Generated initial README content based on existing codebase analysis.
+Author review: Validated correctness against source code, verified all route mappings, WebSocket paths, and env vars.
+-->
+
 # API Gateway
 
 The API Gateway is the single entry point for all client requests in PeerPrep. It routes HTTP and WebSocket traffic to the appropriate backend microservices, handles JWT authentication, and enforces role-based access control.

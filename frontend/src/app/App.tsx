@@ -1,3 +1,8 @@
+// AI Assistance Disclosure:
+// Tool: GitHub Copilot (model: Claude Opus 4.6), date: 2026-04-12
+// Scope: Changed navigation label from "Match Dashboard" to "Matching Dashboard".
+// Author review: Verified the label change renders correctly in the navigation bar.
+
 import { useState, useEffect, useRef } from "react";
 import { Route, Routes } from "react-router-dom";
 import { Button } from "@/app/components/ui/button";

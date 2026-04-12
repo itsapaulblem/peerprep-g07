@@ -1,3 +1,10 @@
+<!--
+AI Assistance Disclosure:
+Tool: GitHub Copilot (model: Claude Opus 4.6), date: 2026-04-12
+Scope: Generated initial README content based on existing codebase analysis.
+Author review: Validated correctness against source code, verified all screens, services, and config values.
+-->
+
 # Frontend
 
 PeerPrep's single-page application built with React, served via Nginx. Provides the user interface for authentication, peer matching, collaborative coding, code execution, and question management.
