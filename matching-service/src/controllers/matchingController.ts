@@ -60,6 +60,7 @@ function pushToWs(ws: WebSocket | undefined, message: OutboundMessage) {
   }
 }
 
+// AI-Generated (edited by Alden)
 /** ─────────────────────────────────────
  *  User Queueing Logic (Pre-Match)
  *  ─────────────────────────────────────

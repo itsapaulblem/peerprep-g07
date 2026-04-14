@@ -58,7 +58,7 @@ Added participantUsername as a field in the collab redis. Added functions that t
 - [ ] Rejected
 
 # Author Notes:
-Open the application on localhost and visually confirm the UI changes and test edge cases 
+Open the application on localhost and visually confirm the UI changes and test edge cases
 
 
 # Date/Time:
@@ -79,7 +79,7 @@ Created an API workflow that fetches question from question-service
 - [ ] Rejected
 
 # Author Notes:
-Question that they generate for each user is different due to Math.random(). Made selection deterministic by hashing roomId and using it as the seed. Open the application on localhost and visually confirm the UI changes and test edge cases 
+Question that they generate for each user is different due to Math.random(). Made selection deterministic by hashing roomId and using it as the seed. Open the application on localhost and visually confirm the UI changes and test edge cases
 
 # Date/Time:
 2026-03-25 20:13
@@ -100,7 +100,7 @@ Reuse collaboration chat message websocket by creating a user_left websocket pat
 - [ ] Rejected
 
 # Author Notes:
-Open the application on localhost and visually confirm the UI changes and test edge cases 
+Open the application on localhost and visually confirm the UI changes and test edge cases
 
 # Date/Time:
 2026-04-05 12:32
@@ -121,8 +121,7 @@ Provided explanation on what is required to fix the bug. Memoized functions usin
 - [ ] Rejected
 
 # Author Notes:
-Open the application on localhost and visually confirm the UI changes and test edge cases 
-
+Open the application on localhost and visually confirm the UI changes and test edge cases
 
 # Date/Time:
 2026-04-05 16:56
@@ -143,7 +142,7 @@ Added imageUrl as one of the variables received from question service and displa
 - [ ] Rejected
 
 # Author Notes:
-Open the application on localhost and visually confirm the UI changes and test edge cases 
+Open the application on localhost and visually confirm the UI changes and test edge cases
 
 # Date/Time:
 2026-04-07 18:36
@@ -164,7 +163,7 @@ Create a room timer mapping to store rooms that are required to be closed and se
 - [ ] Rejected
 
 # Author Notes:
-Open the application on localhost and visually confirm the UI changes and test edge cases 
+Open the application on localhost and visually confirm the UI changes and test edge cases
 
 # Date/Time:
 2026-04-08 13:16
@@ -521,3 +520,133 @@ Created snippets to use in both frontend and user service
 # Author Notes:
 Added the code manually to different files, tested to ensure that it is working
 
+
+# Date/Time:
+2026-04-05 16:12
+
+# Tool:
+GitHub Copilot
+
+# Prompt/Command:
+Refactor the matching Redis subscriber implementation from Redis Pub/Sub to Redis Streams using consumer groups, including event publishing to a stream and add all subscribers to the same consumer group and ensure that match events are retried by available service instances when a service goes down mid-processing of a pending match event.
+
+# Output Summary:
+Replaced Pub/Sub flow with Redis Streams in matching service: added stream consumer group setup, blocking read loop with XREADGROUP, XACK on successful processing, and stale entry recovery using XAUTOCLAIM
+
+# Action Taken:
+- [x] Accepted as-is
+- [ ] Modified
+- [ ] Rejected
+
+# Author Notes:
+Refactored from Pub-Sub to Streams because each match event should only be processed successfully by at most one matching service. Events from pub-sub result in multiple consumers processing the same event which may lead to duplicate room creations. I verified that matching events are consumed reliably and matching behaviour works exactly like before the refactor. Ensured that the following works: Match users of the same topic+difficulty+language, queue timeout, accept match timeout, matching users with relaxed algorithm, both users accept match and navigate into a collaboration room.
+
+
+# Date/Time:
+2026-04-12 16:05
+
+# Tool:
+GitHub Copilot
+
+# Prompt/Command:
+Currently, when the user navigates out of the matching dashboard page and triggers the alert dialog and confirms navigation to leave & cancel match, It works while the user was previously in the queue when they left the page. However, when the user is at the match found page, waiting for both users to accept the match, and a user leaves, this navigation does not "cancel" the pending match. When the user who navigated out requeues for a new match, when the previous pending match times out, their screen will still get redirected to the pending match timeout screen even though they navigated out of the page. There should be abandon_match logic when the user navigates out of the matching dashboard, a Websocket message should be emitted to the matching service which cancels the pending match for both users and removes the pending match data from Redis. The other user should also be notified by the Websocket connection with a match_abandoned message which navigates them to the match abandoned screen. Add cancel match logic when the user is at the pending match stage.
+
+# Output Summary:
+Updated matching flow to support abandon during match_pending: added abandon websocket message handling, cancel logic for pending-match state cleanup, and peer notification with match_abandoned so stale pending timeout events do not affect users after leaving the page
+
+# Action Taken:
+- [x] Accepted as-is
+- [ ] Modified
+- [ ] Rejected
+
+# Author Notes:
+Users were able to leave the matching dashboard page on the match found page without accepting match, but it was not reflected in Redis that the match was abandoned. When users requeue before the match pending timeout ends, they will be navigated to a match timeout screen once the time out does end, resulting in poor UX. Tested leaving the matching dashboard page when the 2 users were on the match found page and awaiting both users to accept. Ensured that no unintended timeout screen navigation occurs when users abandon the match at the match found page.
+
+
+# Date/Time:
+2026-04-11 14:18
+
+# Tool:
+GitHub Copilot
+
+# Prompt/Command:
+Refactor matching controller queue lifecycle functions so enqueue, cancel, and timeout cleanup are atomic with Redis Lua and resilient against stale state races.
+
+# Output Summary:
+Updated matching controller queue flow to use Lua-backed atomic operations for enqueue and queue removal, with snapshot guards to prevent stale cancellation or timeout from removing users who already changed state.
+
+# Action Taken:
+- [x] Accepted as-is
+- [ ] Modified
+- [ ] Rejected
+
+# Author Notes:
+Tested rapid enqueue/cancel/timeout races and confirmed users are not duplicated in queue, stale queue entries are cleaned safely, and active queue set is removed only when list becomes empty.
+
+
+# Date/Time:
+2026-04-11 18:42
+
+# Tool:
+GitHub Copilot
+
+# Prompt/Command:
+Implement pending match acceptance flow in matching controller: record per-user acceptance, finalize only when both accepted, and create collaboration room data after successful finalization.
+
+# Output Summary:
+Added pending match acceptance handling in matching controller with Lua-backed state transitions, mismatch/error handling, and room creation only after both users accept.
+
+# Action Taken:
+- [x] Accepted as-is
+- [ ] Modified
+- [ ] Rejected
+
+# Author Notes:
+Verified both users must accept the same pending match ID, pending state is finalized once, and users receive match_confirmed only after room data and user-room mappings are written.
+
+
+# Date/Time:
+2026-04-12 00:07
+
+# Tool:
+GitHub Copilot
+
+# Prompt/Command:
+Implement matching worker polling and pairing functions with exact and relaxed matching criteria, then publish pending match events to Redis stream.
+
+# Output Summary:
+Added queue polling worker logic to detect eligible queues, dequeue exact pairs first, apply relaxed medium-adjacent pairing after wait threshold, and publish pending match events through Redis streams.
+
+# Action Taken:
+- [x] Accepted as-is
+- [ ] Modified
+- [ ] Rejected
+
+# Author Notes:
+Tested exact-match and relaxed-match scenarios across topic+difficulty+language queues, confirmed queue keys are removed from active set when emptied, and verified pending events are emitted for subscriber processing.
+
+# Date/Time:
+2026-04-12 00:07
+
+# Tool:
+GitHub Copilot
+
+# Prompt/Command:
+// Each user may only hold one active matching request
+if (wsConnectionStore.has(userId)) {
+ws.close(1008, 'User already has an active matching request');
+return;
+}
+
+this is not ideal as in a micro service architecture, each service only checks within their local memory wsConnectionMap to see if the user is already actively in a queue. change this to check the QUEUED_USERS_KEY which is located in redis so that regardless of which container of matching microservice the match request is sent to, they will always check a single source of truth for the active users in queue. upon finding that the user already has an active match request, the websocket should propagate a message back to the frontend to inform the user that they are already in a queue, and there should be a toast pop up in the frontend. create a plan for this.
+
+# Output Summary:
+Refactored the in-memory hash map of storing Websocket connections of active users in queue to instead use the QUEUED_USERS_KEY hashmap in Redis so that the duplicate user in queue issue works when the matching service scales up.
+
+# Action Taken:
+- [x] Accepted as-is
+- [ ] Modified
+- [ ] Rejected
+
+# Author Notes:
+Tested the same user logged into 2 different tabs, attempting to queue into a match at the same time. The second tab was unable to queue due to the first tab already searching in queue.

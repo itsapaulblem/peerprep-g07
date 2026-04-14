@@ -28,6 +28,7 @@ function getFieldValue(fields: string[], target: string): string | null {
   return null;
 }
 
+// AI-Generated (edited by Alden)
 async function processStreamEntry(
   consumer: Redis,
   entryId: string,

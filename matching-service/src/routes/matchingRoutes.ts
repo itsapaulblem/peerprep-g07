@@ -14,7 +14,7 @@ export async function handleWsConnection(ws: WebSocket, req: Request) {
     ws.close(1008, 'Missing or invalid userId');
     return;
   }
-
+  // AI-Generated (edited by Alden)
   try {
     const isAlreadyQueued = await redis.hexists(QUEUED_USERS_KEY, userId);
     if (isAlreadyQueued === 1) {
