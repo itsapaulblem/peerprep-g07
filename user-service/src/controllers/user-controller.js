@@ -1,7 +1,6 @@
 import {
   createUser as _createUser,
   getUserByEmail as _getUserByEmail,
-  getUserById as _getUserById,
   getUserByUsername as _getUserByUsername,
   updateUser as _updateUser,
   updateUserPassword as _updateUserPassword,
@@ -80,34 +79,6 @@ export async function getUserBySelf(req, res) {
   }
 }
 
-export async function getUserByEmail(req, res) {
-  try {
-    const { email } = req.params;
-    const user = await _getUserByEmail(email);
-
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    return res.status(200).json(mapUserToView(user));
-  } catch (error) {
-    return res.status(500).json({ error: 'Failed to retrieve user' });
-  }
-}
-
-export async function getUserById(req, res) {
-  try {
-    const { id } = req.params;
-    const user = await _getUserById(id);
-
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    return res.status(200).json(mapUserToView(user));
-  } catch (error) {
-    return res.status(500).json({ error: 'Failed to retrieve user' });
-  }
-}
-
 export async function getUserByUsername(req, res) {
   try {
     const { username } = req.params;
@@ -140,7 +111,7 @@ export async function updateUser(req, res) {
     if (existingUsername && existingUsername.email !== email) {
       return res.status(409).json({ error: "Username already exists" });
     }
-
+    // AI generated (Edited by Xiang Yu)
     let imageUrl;
     if (profile_image) {
       // Do validation
@@ -203,6 +174,12 @@ export async function updateUserPassword(req, res) {
       return res
         .status(400)
         .json({ error: "Current password and new password are required" });
+    }
+
+    if (new_password === current_password) {
+      return res
+        .status(400)
+        .json({ error: "New password cannot be the same as current password" });
     }
 
     const user = await _getUserByEmail(email);
@@ -296,6 +273,7 @@ export async function updateUserRoleByEmail(req, res) {
 
 export async function getAllUsers(req, res) {
   try {
+    // AI generated (Edited by Xiang Yu)
     const { query = "", page = "1", limit = "10" } = req.query;
 
     const parsedPage = parseInt(page);

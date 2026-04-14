@@ -22,6 +22,7 @@ questionRoutes.get('/', getQuestions);
 // GET /questions/topics
 questionRoutes.get('/topics', getTopics);
 // GET /questions/random?topic=Arrays&difficulty=Easy
+// AI-generated (edited by Jasmine)
 questionRoutes.get('/random', getRandomQuestion);
 
 // GET /questions/:id
@@ -29,6 +30,7 @@ questionRoutes.get('/:id', getQuestionById);
 
 // ── Admin-only routes ────────────────────────────────────────
 // POST /questions
+// AI-generated (edited by Jasmine)
 questionRoutes.post('/', requireAdmin, upload.array('images', 10), createQuestion);
 
 // PUT /questions/:id
@@ -40,6 +42,7 @@ questionRoutes.delete('/:id', requireAdmin, deleteQuestion);
 // ── Standalone Image routes (Admin only) ─────────────────────────────────
 // POST   /questions/:id/images  — upload images (multipart/form-data, field: "images")
 // DELETE /questions/:id/images  — delete a specific image (body: { imageUrl })
+// AI-generated (edited by Jasmine)
 questionRoutes.post('/:id/images', requireAdmin, upload.array('images', 10), uploadQuestionImages);
 questionRoutes.delete('/:id/images', requireAdmin, deleteQuestionImage);
 

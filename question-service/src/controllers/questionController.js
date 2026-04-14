@@ -53,6 +53,7 @@ const sendDuplicateResponse = (res, duplicate) =>
 // Helper: validate and upload image files to S3
 // Returns array of S3 URLs
 // ────────────────────────────────────────────────────────────
+// AI-generated (edited by Jasmine)
 const handleImageUploads = async (files) => {
   if (!files || files.length === 0) return [];
  
@@ -184,6 +185,7 @@ const createQuestion = async (req, res) => {
 // Retrieve by topics + difficulty
 // Both filters are optional; if neither is provided all questions are returned.
 // ────────────────────────────────────────────────────────────
+// AI-generated (edited by Jasmine)
 const getQuestions = async (req, res) => {
   const { topics, difficulty } = req.query;
   const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
@@ -269,6 +271,7 @@ const getQuestions = async (req, res) => {
   }
 };
 
+// AI-generated (edited by Jasmine)
 const getRandomQuestion = async (req, res) => {
   const topic = typeof req.query.topic === 'string' ? req.query.topic.trim() : '';
   const { difficulty } = req.query;

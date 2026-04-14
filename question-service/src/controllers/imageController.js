@@ -2,6 +2,7 @@ import pool from '../db/index.js';
 import { uploadImage, deleteImage } from '../services/s3Service.js';
 
 // ── POST /questions/:id/images ────────────────────────────────
+// AI-generated (edited by Jasmine)
 const uploadQuestionImages = async (req, res) => {
   const { id } = req.params;
 

@@ -5,6 +5,8 @@ import axios from 'axios';
  *
  * Expects the caller to pass a header: Authorization: Bearer <token>
  */
+
+// AI-generated (edited by Jasmine)
 const requireAdmin = async (req, res, next) => {
   const authHeader = req.headers['authorization'];
 

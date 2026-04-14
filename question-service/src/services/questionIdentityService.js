@@ -1,5 +1,6 @@
 import pool from '../db/index.js';
 
+// AI-generated (edited by Jasmine)
 const NORMALIZED_LINK_SQL = `
   LOWER(
     REGEXP_REPLACE(
